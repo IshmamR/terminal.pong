@@ -1,0 +1,26 @@
+[package]
+name = "terminal_games"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.winres]
+OriginalFilename = "pong-game.exe"
+LegalCopyright = "© 2025 IshmamR"
+FileDescription = "Terminal Pong Game"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
+[dependencies]
+ratatui = "0.29.0"
+crossterm = "0.28.1"
+rand = "0.9.1"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = true
