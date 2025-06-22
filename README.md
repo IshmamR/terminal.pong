@@ -5,8 +5,12 @@ A simple, fun ping pong game playable entirely in your terminal. Built with Rust
 Currently, you can play against a basic AI opponent. It's fast, minimal, and runs right inside your terminal window.
 
 ## 🎥 Demo
-<div style="text-align:center">
-<img src="./assets/demo.gif" alt="Gameplay demo" />
+<div>
+<img src="https://vhs.charm.sh/vhs-6mvBhYmwwrMUSYQOCBSQlB.gif" alt="Made with VHS" width="1200" height="600" />
+
+<a href="https://vhs.charm.sh">
+  <img src="https://stuff.charm.sh/vhs/badge.svg" />
+</a>
 </div>
 
 ---
@@ -40,17 +44,20 @@ cargo run --release
 Then play directly in your terminal!
 
 ### 🎯 Controls
+
 - Up Arrow/ Mouse scroll up: Move paddle up
 - Down Arrow/ Mouse scroll down: Move paddle down
 - Space: Power move ( this is for pro players ;) )
 - Q: Quit
 
 ### 🛠 Tech Stack
+
 - Language: Rust
 - UI: ratatui
 - Rendering: Crossterm-based backend
 
 🚧 Roadmap / Planned Features
+
 - [ ] 🎮 Multiplayer support — play with a friend over the network or local terminal
 - [ ] 🧠 Computer difficulty levels — beginner, intermediate, expert
 - [ ] 🌈 Screen saver mode — AI vs AI with endless pong as a terminal screensaver
