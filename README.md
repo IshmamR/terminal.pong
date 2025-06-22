@@ -55,5 +55,12 @@ Then play directly in your terminal!
 - [ ] 🧠 Computer difficulty levels — beginner, intermediate, expert
 - [ ] 🌈 Screen saver mode — AI vs AI with endless pong as a terminal screensaver
 
+## 📜 License
 
+[MIT](LICENSE).
+
+---
+
+<div style="text-align:center">
 Made with ❤️ and Rust.
+</div>
