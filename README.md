@@ -36,8 +36,8 @@ Currently, you can play against a basic AI opponent. It's fast, minimal, and run
 Clone the repository and build:
 
 ```bash
-git clone https://github.com/yourusername/terminal-pingpong.git
-cd terminal-pingpong
+git clone [https://github.com/yourusername/terminal-pingpong.git](https://github.com/IshmamR/terminal.pong)
+cd terminal.pong
 cargo run --release
 ```
 
