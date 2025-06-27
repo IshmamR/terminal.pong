@@ -11,7 +11,7 @@ const DEFAULT_BALL_VELOCITY_X: i8 = 3;
 const DEFAULT_BALL_VELOCITY_Y: i8 = 1;
 const DEFAULT_PADDLE_WIDTH: u16 = 3;
 const STARTING_POWER_MOVES: u8 = 10;
-const DEFAULT_DIFFICULTY: f32 = 0.5;
+const DEFAULT_DIFFICULTY: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy)]
 struct ComputerAI {
@@ -53,7 +53,7 @@ pub struct Ball {
     pub(crate) color: Color,
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum GameType {
     AgainstAi,
     ScreenSaver,
@@ -61,12 +61,14 @@ pub enum GameType {
 
 #[derive(Debug)]
 pub struct Game {
+    game_type: GameType,
     players: [Player; 2],
     ball: Ball,
     game_area: Rect,
     started_at: Option<Instant>,
     last_update: Instant,
     is_paused: bool,
+    scored_keep_display: bool,
 }
 
 impl Game {
@@ -119,6 +121,7 @@ impl Game {
         };
 
         Self {
+            game_type,
             players: [player1, player2],
             ball: Ball {
                 position: [70, 14],
@@ -128,8 +131,9 @@ impl Game {
             },
             last_update: Instant::now(),
             game_area: game_area,
-            is_paused: true,
+            is_paused: false,
             started_at: None,
+            scored_keep_display: false,
         }
     }
 
@@ -174,6 +178,10 @@ impl Game {
         }
     }
 
+    pub fn toggle_pause(&mut self) {
+        self.is_paused = !self.is_paused;
+    }
+
     /**
      * 1 -> ball collision with Player 1's bar
      * 2 -> ball collision with Player 2's bar
@@ -190,52 +198,67 @@ impl Game {
         let new_y = ball.position[1].saturating_add_signed(ball.velocity[1] as i16);
 
         // collision with top and bottom walls
-        if new_y == 0 || new_y >= inner_height - 1 {
+        if new_y == 0 || new_y >= inner_height {
             ball.velocity[1] = -ball.velocity[1];
             ball.position[1] = if new_y == 0 { 0 } else { inner_height - 1 };
         } else {
             ball.position[1] = new_y;
         }
 
-        // ball collision with Player 1's bar (left side)
-        if new_x <= 3 && ball.velocity[0] < 0 {
-            if new_y >= players[0].bar_position && new_y < players[0].bar_position + 5 {
-                ball.velocity[0] = -ball.velocity[0];
-                ball.position[0] = 5;
-                return Some(1);
+        if !self.scored_keep_display {
+            // ball collision with Player 1's bar (left side)
+            if new_x <= DEFAULT_PADDLE_WIDTH && ball.velocity[0] < 0 {
+                if new_y >= players[0].bar_position
+                    && new_y < players[0].bar_position + players[0].bar_length as u16
+                {
+                    ball.velocity[0] = -ball.velocity[0];
+                    ball.position[0] = DEFAULT_PADDLE_WIDTH;
+                    return Some(1);
+                }
             }
-        }
 
-        // ball collision with Player 2's bar (right side)
-        if new_x >= inner_width - 4 && ball.velocity[0] > 0 {
-            if new_y >= players[1].bar_position && new_y < players[1].bar_position + 5 {
-                ball.velocity[0] = -DEFAULT_BALL_VELOCITY_X;
-                // ball.velocity[0] = -ball.velocity[0];
-                ball.position[0] = inner_width - 5;
-                ball.is_powered = false;
-                return Some(2);
+            // ball collision with Player 2's bar (right side)
+            if new_x >= inner_width - DEFAULT_PADDLE_WIDTH - 1 && ball.velocity[0] > 0 {
+                if new_y >= players[1].bar_position
+                    && new_y < players[1].bar_position + players[1].bar_length as u16
+                {
+                    ball.velocity[0] = -DEFAULT_BALL_VELOCITY_X;
+                    ball.position[0] = inner_width - DEFAULT_PADDLE_WIDTH - 1;
+                    ball.is_powered = false;
+                    return Some(2);
+                }
             }
         }
 
         // ball went off screen (reset)
-        if new_x <= 0 || new_x >= inner_width {
-            // Ball exited the screen: left or right
-            if new_x <= 0 {
-                // ball exited on the left → player missed → computer scores
-                self.players[1].score += 1;
+        if new_x < DEFAULT_PADDLE_WIDTH || new_x > inner_width - DEFAULT_PADDLE_WIDTH - 1 {
+            if new_x <= 0 || new_x >= inner_width {
+                // Ball exited the screen: left or right
+                if new_x <= 0 {
+                    // ball exited on the left → player missed → computer scores
+                    self.players[1].score += 1;
+                } else {
+                    // ball exited on the right → computer missed → player scores
+                    self.players[0].score += 1;
+                }
+
+                // reset ball to center
+                ball.position = [inner_width / 2, inner_height / 2];
+
+                let random_number: i16 = rand::random_range(0..=1);
+                let direction = if random_number == 0 { 1 } else { -1 };
+
+                ball.velocity[0] = direction * DEFAULT_BALL_VELOCITY_X;
+                ball.is_powered = false;
+
+                self.scored_keep_display = false;
+
+                return None;
             } else {
-                // ball exited on the right → computer missed → player scores
-                self.players[0].score += 1;
+                // keep drawing
+                self.scored_keep_display = true;
+                ball.position[0] = new_x;
             }
-
-            // reset ball to center
-            ball.position = [inner_width / 2, inner_height / 2];
-
-            let random_number: i16 = rand::random_range(0..=1);
-            let direction = if random_number == 0 { 1 } else { -1 };
-
-            ball.velocity[0] = direction * 3;
-            ball.is_powered = false;
         } else {
             ball.position[0] = new_x;
         }
@@ -318,13 +341,13 @@ impl Game {
                 pred_y += (random::<f32>() - 0.5) * 8.0;
             }
 
-            // clamp to fix
-            pred_y = pred_y.clamp(0.0, (inner_height - computer.bar_length as u16) as f32);
-
             // add some final randomness (10% chance)
             if random::<f32>() < 0.1 {
                 pred_y += (random::<f32>() - 0.5) * 2.0;
             }
+
+            // clamp to fix
+            pred_y = pred_y.clamp(0.0, (inner_height - computer.bar_length as u16) as f32);
 
             ai.target_position = pred_y;
         }
@@ -341,12 +364,21 @@ impl Game {
 
         // add some jitter and behavioral quirks
         let jitter = (random::<f32>() - 0.5) * 0.1 * (1.0 + ai.fatigue);
-        let movement = distance_to_target.signum() * ai.current_speed + jitter;
+        let movement = distance_to_target.signum() * ai.current_speed
+            + if self.game_type == GameType::AgainstAi {
+                jitter
+            } else {
+                0.0
+            };
 
-        let final_movement = if random::<f32>() < 0.02 + ai.fatigue * 0.05 {
-            movement * 0.3 // hesitation (2% chance)
-        } else if random::<f32>() < 0.03 {
-            movement * 1.4 // overshoot (3% chance)
+        let final_movement = if self.game_type == GameType::AgainstAi {
+            if random::<f32>() < 0.02 + ai.fatigue * 0.05 {
+                movement * 0.3 // hesitation (2% chance)
+            } else if random::<f32>() < 0.03 {
+                movement * 1.4 // overshoot (3% chance)
+            } else {
+                movement
+            }
         } else {
             movement
         };
@@ -361,10 +393,14 @@ impl Game {
     }
 
     pub fn update_game_state(&mut self) {
+        if self.is_paused {
+            return;
+        }
+
         if self.last_update.elapsed() >= Duration::from_millis(33) {
-            let _ = self.update_ball_position();
             self.update_computer_player(0);
             self.update_computer_player(1);
+            let _ = self.update_ball_position();
 
             self.last_update = Instant::now();
         }

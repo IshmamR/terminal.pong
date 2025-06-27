@@ -55,11 +55,9 @@ impl App {
             if size.width < min_width || size.height < min_height {
                 terminal.draw(|frame| self.show_terminal_resize_warning(frame))?;
             } else {
-                terminal.draw(|frame| self.draw(frame))?;
-
-                self.game_state.update_game_state();
-
                 self.handle_events()?;
+                self.game_state.update_game_state();
+                terminal.draw(|frame| self.draw(frame))?;
             }
         }
 
@@ -110,13 +108,12 @@ impl App {
 
     fn draw_game_elements(&self, frame: &mut Frame) {
         let game_state = &self.game_state;
-        let bar_height = 5;
         let game_area = game_state.get_area();
         let inner_area = Rect::new(
             game_area.x + 1,
             game_area.y + 1,
-            game_area.width - 2,
-            game_area.height - 2,
+            game_area.width - 1,
+            game_area.height - 1,
         );
 
         // Player 1 bar (left side)
@@ -125,7 +122,7 @@ impl App {
             inner_area.x,
             inner_area.y + player1.bar_position,
             3,
-            bar_height,
+            player1.bar_length as u16,
         );
         let bar_1 = Block::default()
             .borders(Borders::ALL)
@@ -138,7 +135,7 @@ impl App {
             inner_area.x + inner_area.width - 3,
             inner_area.y + player2.bar_position,
             3,
-            bar_height,
+            player2.bar_length as u16,
         );
         let bar_2 = Block::default()
             .borders(Borders::ALL)
@@ -176,6 +173,7 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
+            KeyCode::Char('p') => self.game_state.toggle_pause(),
             KeyCode::Char(' ') => self.game_state.power_move(0),
             KeyCode::Up => self.game_state.move_player(0, 1),
             KeyCode::Down => self.game_state.move_player(0, -1),
