@@ -521,7 +521,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "terminal_games"
+name = "terminal-pong"
 version = "0.1.0"
 dependencies = [
  "crossterm",

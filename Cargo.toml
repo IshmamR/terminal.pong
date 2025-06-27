@@ -1,12 +1,12 @@
 [package]
-name = "terminal_games"
+name = "terminal-pong"
 version = "0.1.0"
 edition = "2021"
 
 [package.metadata.winres]
-OriginalFilename = "pong-game.exe"
+OriginalFilename = "terminal-pong.exe"
 LegalCopyright = "© 2025 IshmamR"
-FileDescription = "Terminal Pong Game"
+FileDescription = "Terminal Pong"
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
