@@ -57,6 +57,7 @@ pub struct Ball {
 pub enum GameType {
     AgainstAi,
     ScreenSaver,
+    WithFriend,
 }
 
 #[derive(Debug)]
@@ -72,16 +73,22 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new(player_names: [&str; 2], game_area: Rect, game_type: GameType) -> Self {
+    pub fn new(
+        player_names: [&str; 2],
+        game_area: Rect,
+        game_type: GameType,
+        difficulty: Option<f32>,
+    ) -> Self {
+        let final_difficulty = difficulty.unwrap_or(DEFAULT_DIFFICULTY).clamp(0.0, 1.0);
         let ai_player = ComputerAI {
-            reaction_delay: 0.2 + (1.0 - DEFAULT_DIFFICULTY) * 0.5, // 0.2-0.7 seconds
+            reaction_delay: 0.2 + (1.0 - final_difficulty) * 0.5, // 0.2-0.7 seconds
             last_ball_direction: 0,
             reaction_timer: 0.0,
-            prediction_error: 2.0 + (1.0 - DEFAULT_DIFFICULTY) * 3.0, // 2-5 units error
-            max_speed: 0.8 + DEFAULT_DIFFICULTY * 0.7,                // 0.8-1.5 speed
+            prediction_error: 2.0 + (1.0 - final_difficulty) * 3.0, // 2-5 units error
+            max_speed: 0.8 + final_difficulty * 0.7,                // 0.8-1.5 speed
             current_speed: 0.0,
             target_position: 0.0,
-            difficulty: DEFAULT_DIFFICULTY,
+            difficulty: final_difficulty,
             fatigue: 0.0,
             last_update: Instant::now(),
         };
@@ -124,7 +131,10 @@ impl Game {
             game_type,
             players: [player1, player2],
             ball: Ball {
-                position: [70, 14],
+                position: [
+                    game_area.width.saturating_sub(4) / 2,
+                    game_area.height.saturating_sub(4) / 2,
+                ],
                 velocity: [DEFAULT_BALL_VELOCITY_X, DEFAULT_BALL_VELOCITY_Y],
                 is_powered: false,
                 color: Color::LightRed,
@@ -164,6 +174,10 @@ impl Game {
 
         let player = &mut self.players[player_index];
 
+        if player.is_computer {
+            return;
+        }
+
         if direction > 0 {
             // up
             if player.bar_position > 0 {
@@ -171,7 +185,7 @@ impl Game {
             }
         } else {
             // down
-            let inner_height = self.game_area.height - 2;
+            let inner_height = self.game_area.height.saturating_sub(2);
             if player.bar_position + (player.bar_length as u16) < inner_height {
                 player.bar_position += 1;
             }
@@ -188,8 +202,8 @@ impl Game {
      * None -> no collision, ball position updated normally
      */
     fn update_ball_position(&mut self) -> Option<u8> {
-        let inner_width = self.game_area.width - 2;
-        let inner_height = self.game_area.height - 2;
+        let inner_width = self.game_area.width.saturating_sub(2);
+        let inner_height = self.game_area.height.saturating_sub(2);
 
         let players = &self.players;
         let ball = &mut self.ball;
@@ -243,7 +257,10 @@ impl Game {
                 }
 
                 // reset ball to center
-                ball.position = [inner_width / 2, inner_height / 2];
+                ball.position = [
+                    inner_width / 2, 
+                    rand::random_range(1..inner_height.saturating_sub(1))
+                ];
 
                 let random_number: i16 = rand::random_range(0..=1);
                 let direction = if random_number == 0 { 1 } else { -1 };
@@ -408,6 +425,7 @@ impl Game {
 
     pub fn power_move(&mut self, player_index: usize) {
         let player = &mut self.players[player_index];
+
         if player.power_moves_left <= 0 {
             return; // no power move left
         }

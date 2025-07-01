@@ -1,5 +1,6 @@
 use std::{
     io::{self},
+    thread::sleep,
     time::Duration,
 };
 
@@ -33,7 +34,8 @@ impl App {
         let game_state = Game::new(
             ["Promethewz", "Computer"],
             Rect::default(),
-            GameType::ScreenSaver,
+            GameType::WithFriend,
+            None,
         );
 
         Self {
@@ -43,9 +45,7 @@ impl App {
     }
 
     pub fn run(&mut self, mut terminal: DefaultTerminal) -> io::Result<()> {
-        let mut stdout = io::stdout();
-
-        stdout.execute(event::EnableMouseCapture)?;
+        let mut last_size: u8 = 0; // 0 -> too small | 1 -> normal
 
         while !self.exit {
             let min_width = 150;
@@ -53,15 +53,24 @@ impl App {
 
             let size = terminal.size()?;
             if size.width < min_width || size.height < min_height {
+                if last_size == 1 {
+                    sleep(Duration::from_millis(100));
+                    last_size = 0;
+                }
                 terminal.draw(|frame| self.show_terminal_resize_warning(frame))?;
             } else {
+                if last_size == 0 {
+                    sleep(Duration::from_millis(100));
+                    let terminal_area = centered_rect(130, 28, size.width, size.height);
+                    self.game_state.set_area(terminal_area);
+                    last_size = 1;
+                }
                 self.handle_events()?;
                 self.game_state.update_game_state();
                 terminal.draw(|frame| self.draw(frame))?;
             }
         }
 
-        stdout.lock().execute(event::DisableMouseCapture)?;
         Ok(())
     }
 
@@ -78,7 +87,7 @@ impl App {
     fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
 
-        let block_area = centered_rect(140, 28, area.width, area.height);
+        let block_area = centered_rect(130, 28, area.width, area.height);
         self.game_state.set_area(block_area);
 
         let title = self.get_block_title("Pongerz ☘️");
@@ -153,6 +162,7 @@ impl App {
         // let ball = Paragraph::new("●").style(Style::default().fg(Color::Red));
         // let ball = Paragraph::new("⬢").style(Style::default().fg(Color::Red));
         let ball = Paragraph::new("██").style(Style::default().fg(Color::Red));
+        // let ball = Paragraph::new("⣿").style(Style::default().fg(Color::Red));
         frame.render_widget(ball, ball_area);
     }
 
@@ -174,9 +184,14 @@ impl App {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Char('p') => self.game_state.toggle_pause(),
-            KeyCode::Char(' ') => self.game_state.power_move(0),
+            // player 1
+            KeyCode::Char('/') => self.game_state.power_move(0),
             KeyCode::Up => self.game_state.move_player(0, 1),
             KeyCode::Down => self.game_state.move_player(0, -1),
+            // player 2
+            KeyCode::Char(' ') => self.game_state.power_move(1),
+            KeyCode::Char('w') => self.game_state.move_player(1, 1),
+            KeyCode::Char('s') => self.game_state.move_player(1, -1),
             _ => {}
         }
     }
@@ -206,7 +221,7 @@ impl App {
         let padding_right: u16 = 32;
 
         let total_padding = padding_left + padding_right + app_name.len() as u16;
-        let available_space = 140 - total_padding;
+        let available_space = 130 - total_padding;
 
         format!(
             " {} {} {} {} {} ",
@@ -221,8 +236,31 @@ impl App {
 
 fn main() -> io::Result<()> {
     let terminal = ratatui::init();
-    let app_result = App::new().run(terminal);
+    let mut app = App::new();
+
+    let mut stdout = io::stdout();
+    stdout.execute(event::EnableMouseCapture)?;
+
+    let app_result = app.run(terminal);
+
+    stdout.lock().execute(event::DisableMouseCapture)?;
+
     ratatui::restore();
+
+    match &app_result {
+        Ok(()) => {
+            println!("Thanks for playing Pongerz! 🏓");
+            println!(
+                "Final Score: {} - {}",
+                app.game_state.get_player(0).score,
+                app.game_state.get_player(1).score
+            );
+            println!("Game area height: {}", app.game_state.get_area().height);
+        }
+        Err(e) => {
+            eprintln!("Game ended with error: {}", e);
+        }
+    }
 
     app_result
 }
