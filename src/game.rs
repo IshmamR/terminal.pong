@@ -1,9 +1,18 @@
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKind};
 use rand::random;
-use std::time::{Duration, Instant};
+use std::{
+    io,
+    time::{Duration, Instant},
+};
 
-use ratatui::{layout::Rect, style::Color};
+use ratatui::{
+    layout::{Alignment, Rect},
+    style::{Color, Style},
+    widgets::{canvas::Circle, Block, BorderType, Borders, Paragraph},
+    Frame,
+};
 
-use crate::helpers::string_to_char_array;
+use crate::helpers::{centered_rect, string_to_char_array};
 
 pub const PLAYER_NAME_SIZE: usize = 16;
 const DEFAULT_BAR_LENGTH: u8 = 5;
@@ -15,42 +24,43 @@ const DEFAULT_DIFFICULTY: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy)]
 struct ComputerAI {
-    pub(crate) reaction_delay: f32, // Time before reacting to ball direction change
-    pub(crate) last_ball_direction: i8, // Track ball direction changes
-    pub(crate) reaction_timer: f32, // Current reaction delay timer
-    pub(crate) prediction_error: f32, // How far off the prediction can be
-    pub(crate) max_speed: f32,      // Maximum movement speed
-    pub(crate) current_speed: f32,  // Current movement speed (with acceleration)
-    pub(crate) target_position: f32, // Where the AI wants to move
-    pub(crate) difficulty: f32,     // 0.0 to 1.0, affects all parameters
-    pub(crate) fatigue: f32,        // Increases over time, affects performance
-    pub(crate) last_update: Instant, // For delta time calculations
+    reaction_delay: f32,     // Time before reacting to ball direction change
+    last_ball_direction: i8, // Track ball direction changes
+    reaction_timer: f32,     // Current reaction delay timer
+    prediction_error: f32,   // How far off the prediction can be
+    max_speed: f32,          // Maximum movement speed
+    current_speed: f32,      // Current movement speed (with acceleration)
+    target_position: f32,    // Where the AI wants to move
+    difficulty: f32,         // 0.0 to 1.0, affects all parameters
+    fatigue: f32,            // Increases over time, affects performance
+    last_update: Instant,    // For delta time calculations
 }
 
 #[derive(Debug, Default)]
 pub struct Player {
-    pub(crate) name: [char; PLAYER_NAME_SIZE],
-    pub(crate) score: u32,
+    pub name: [char; PLAYER_NAME_SIZE],
+    pub score: u32,
 
-    pub(crate) power_moves_left: u8,
-    pub(crate) last_power_used_at: Option<Instant>,
+    pub power_moves_left: u8,
+    pub last_power_used_at: Option<Instant>,
 
-    pub(crate) bar_position: u16,
-    pub(crate) bar_length: u8,
-    pub(crate) bar_color: Color,
+    pub bar_position: u16,
+    pub bar_length: u8,
+    pub bar_color: Color,
 
-    pub(crate) is_ready: bool,
+    pub is_ready: bool,
 
-    pub(crate) is_computer: bool,
+    pub is_computer: bool,
     computer_ai: Option<ComputerAI>,
 }
 
 #[derive(Debug, Default)]
 pub struct Ball {
-    pub(crate) position: [u16; 2],
-    pub(crate) velocity: [i8; 2],
-    pub(crate) is_powered: bool,
-    pub(crate) color: Color,
+    pub circle: Circle,
+    pub position: [u16; 2],
+    pub velocity: [i8; 2],
+    pub is_powered: bool,
+    pub color: Color,
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,7 +76,7 @@ pub struct Game {
     players: [Player; 2],
     ball: Ball,
     game_area: Rect,
-    started_at: Option<Instant>,
+    // started_at: Option<Instant>,
     last_update: Instant,
     is_paused: bool,
     scored_keep_display: bool,
@@ -131,6 +141,12 @@ impl Game {
             game_type,
             players: [player1, player2],
             ball: Ball {
+                circle: Circle {
+                    x: (game_area.width.saturating_sub(4) / 2) as f64,
+                    y: (game_area.height.saturating_sub(4) / 2) as f64,
+                    radius: 5.0,
+                    color: Color::LightRed,
+                },
                 position: [
                     game_area.width.saturating_sub(4) / 2,
                     game_area.height.saturating_sub(4) / 2,
@@ -142,7 +158,7 @@ impl Game {
             last_update: Instant::now(),
             game_area: game_area,
             is_paused: false,
-            started_at: None,
+            // started_at: None,
             scored_keep_display: false,
         }
     }
@@ -163,11 +179,11 @@ impl Game {
         &self.ball
     }
 
-    pub fn ready_player(&mut self, index: usize) {
+    fn _ready_player(&mut self, index: usize) {
         self.players[index].is_ready = true;
     }
 
-    pub fn move_player(&mut self, player_index: usize, direction: i8) {
+    fn move_player(&mut self, player_index: usize, direction: i8) {
         if direction == 0 {
             return;
         }
@@ -178,21 +194,60 @@ impl Game {
             return;
         }
 
+        let step: u16 = 1;
+
         if direction > 0 {
             // up
             if player.bar_position > 0 {
-                player.bar_position -= 1;
+                player.bar_position -= step;
             }
         } else {
             // down
             let inner_height = self.game_area.height.saturating_sub(2);
             if player.bar_position + (player.bar_length as u16) < inner_height {
-                player.bar_position += 1;
+                player.bar_position += step;
             }
         }
     }
 
-    pub fn toggle_pause(&mut self) {
+    fn handle_key_event(&mut self, key_event: KeyEvent, app_exit: &mut bool) {
+        match key_event.code {
+            KeyCode::Char('q') => *app_exit = true,
+            KeyCode::Char('p') => self.toggle_pause(),
+            // player 1
+            KeyCode::Char('/') => self.power_move(0),
+            KeyCode::Up => self.move_player(0, 1),
+            KeyCode::Down => self.move_player(0, -1),
+            // player 2
+            KeyCode::Char(' ') => self.power_move(1),
+            KeyCode::Char('w') => self.move_player(1, 1),
+            KeyCode::Char('s') => self.move_player(1, -1),
+            _ => {}
+        }
+    }
+
+    fn handle_mouse_event(&mut self, mouse_event: MouseEvent) {
+        match mouse_event.kind {
+            MouseEventKind::ScrollUp => self.move_player(0, 1),
+            MouseEventKind::ScrollDown => self.move_player(0, -1),
+            _ => {}
+        }
+    }
+
+    fn handle_events(&mut self, app_exit: &mut bool) -> io::Result<()> {
+        if event::poll(Duration::from_millis(10))? {
+            match event::read()? {
+                Event::Mouse(mouse_event) => self.handle_mouse_event(mouse_event),
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    self.handle_key_event(key_event, app_exit)
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn toggle_pause(&mut self) {
         self.is_paused = !self.is_paused;
     }
 
@@ -202,8 +257,8 @@ impl Game {
      * None -> no collision, ball position updated normally
      */
     fn update_ball_position(&mut self) -> Option<u8> {
-        let inner_width = self.game_area.width.saturating_sub(2);
-        let inner_height = self.game_area.height.saturating_sub(2);
+        let inner_width = self.game_area.width.saturating_sub(3);
+        let inner_height = self.game_area.height.saturating_sub(1);
 
         let players = &self.players;
         let ball = &mut self.ball;
@@ -258,8 +313,8 @@ impl Game {
 
                 // reset ball to center
                 ball.position = [
-                    inner_width / 2, 
-                    rand::random_range(1..inner_height.saturating_sub(1))
+                    inner_width / 2,
+                    rand::random_range(1..inner_height.saturating_sub(1)),
                 ];
 
                 let random_number: i16 = rand::random_range(0..=1);
@@ -292,7 +347,7 @@ impl Game {
         }
         let ai = computer.computer_ai.as_mut().unwrap();
 
-        let inner_height = self.game_area.height - 2;
+        let inner_height = self.game_area.height;
         let paddle_x = if player_index == 0 {
             DEFAULT_PADDLE_WIDTH // Player 1's paddle is on the left
         } else {
@@ -403,27 +458,13 @@ impl Game {
         // apply new position with clamping
         let new_pos = (paddle_center + final_movement).clamp(
             computer.bar_length as f32 / 2.0,
-            inner_height as f32 - computer.bar_length as f32 / 2.0,
+            (inner_height - computer.bar_length as u16) as f32,
         );
 
         computer.bar_position = (new_pos - computer.bar_length as f32 / 2.0) as u16;
     }
 
-    pub fn update_game_state(&mut self) {
-        if self.is_paused {
-            return;
-        }
-
-        if self.last_update.elapsed() >= Duration::from_millis(33) {
-            self.update_computer_player(0);
-            self.update_computer_player(1);
-            let _ = self.update_ball_position();
-
-            self.last_update = Instant::now();
-        }
-    }
-
-    pub fn power_move(&mut self, player_index: usize) {
+    fn power_move(&mut self, player_index: usize) {
         let player = &mut self.players[player_index];
 
         if player.power_moves_left <= 0 {
@@ -442,5 +483,128 @@ impl Game {
             ball.is_powered = true;
             player.power_moves_left -= 1;
         }
+    }
+
+    fn draw_core_elements(&self, frame: &mut Frame) {
+        let game_area = self.get_area();
+        let inner_area = Rect::new(
+            game_area.x + 1,
+            game_area.y + 1,
+            game_area.width - 1,
+            game_area.height - 1,
+        );
+
+        // Player 1 bar (left side)
+        let player1 = self.get_player(0);
+        let bar_1_area = Rect::new(
+            inner_area.x,
+            inner_area.y + player1.bar_position,
+            3,
+            player1.bar_length as u16,
+        );
+        let bar_1 = Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::Cyan).bg(Color::Blue));
+        frame.render_widget(bar_1, bar_1_area);
+
+        // Player 2 bar (right side)
+        let player2 = self.get_player(1);
+        let bar_2_area = Rect::new(
+            inner_area.x + inner_area.width - 4,
+            inner_area.y + player2.bar_position,
+            3,
+            player2.bar_length as u16,
+        );
+        let bar_2 = Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::Cyan).bg(Color::Blue));
+        frame.render_widget(bar_2, bar_2_area);
+
+        // Ball
+        let ball = self.get_ball();
+        let ball_area = Rect::new(
+            inner_area.x + ball.position[0],
+            inner_area.y + ball.position[1],
+            2,
+            2,
+        );
+        let ball = Paragraph::new("██").style(Style::default().fg(Color::Red));
+        frame.render_widget(ball, ball_area);
+    }
+
+    pub fn draw(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+
+        let block_area = centered_rect(130, 28, area.width, area.height);
+        self.set_area(block_area);
+
+        let title = self.get_block_title("terminal.pong");
+
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_type(BorderType::Thick)
+            .style(Style::default().fg(Color::Green))
+            .title_alignment(Alignment::Center);
+        frame.render_widget(block, block_area);
+
+        self.draw_core_elements(frame);
+
+        let controls_area = Rect::new(
+            block_area.x + 1,
+            block_area.y + block_area.height - 1,
+            block_area.width - 2,
+            1,
+        );
+        let controls_text = " Controls: ↑/↓ arrows / mouse wheel | Q - Quit ";
+        let controls = Paragraph::new(controls_text)
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center);
+        frame.render_widget(controls, controls_area);
+    }
+
+    pub fn game_loop(&mut self, app_exit: &mut bool) -> io::Result<()> {
+        if self.is_paused {
+            return Ok(());
+        }
+
+        let fps = 30;
+        let each_frame = 1000 / fps;
+
+        if self.last_update.elapsed() >= Duration::from_millis(each_frame) {
+            self.handle_events(app_exit)?;
+            self.update_computer_player(0);
+            self.update_computer_player(1);
+            let _ = self.update_ball_position();
+
+            self.last_update = Instant::now();
+        }
+
+        Ok(())
+    }
+
+    fn get_block_title(&self, app_name: &'static str) -> String {
+        let player1 = self.get_player(0);
+        let mut player_text = player1.name.iter().collect::<String>();
+        player_text += &format!("({})", player1.score);
+
+        let player2 = self.get_player(1);
+        let mut computer_text = player2.name.iter().collect::<String>();
+        computer_text += &format!("({})", player2.score);
+
+        let padding_left: u16 = 32;
+        let padding_right: u16 = 32;
+
+        let total_padding = padding_left + padding_right + app_name.len() as u16;
+        let available_space = 130 - total_padding;
+
+        format!(
+            " {} {} {} {} {} ",
+            player_text.trim_end(),
+            "─".repeat((available_space / 2) as usize),
+            app_name.trim_end(),
+            "─".repeat((available_space / 2) as usize),
+            computer_text.trim_start(),
+        )
     }
 }

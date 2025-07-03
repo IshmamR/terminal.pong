@@ -5,16 +5,16 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKind},
+    event::{self, Event, KeyCode, KeyEventKind},
     ExecutableCommand,
 };
-#[allow(unused_imports)]
 use ratatui::{
-    layout::{Alignment, Rect},
+    layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     widgets::{Block, BorderType, Borders, Paragraph},
     DefaultTerminal, Frame,
 };
+use tui_big_text::{BigText, PixelSize};
 
 mod game;
 mod helpers;
@@ -26,21 +26,24 @@ use crate::{
 #[derive(Debug)]
 pub struct App {
     exit: bool,
-    game_state: Game,
+    selected_option: usize,
+    game_state: Option<Game>,
 }
 
 impl App {
     pub fn new() -> Self {
-        let game_state = Game::new(
+        let _game_state = Game::new(
             ["Promethewz", "Computer"],
             Rect::default(),
-            GameType::WithFriend,
-            None,
+            GameType::ScreenSaver,
+            Some(0.8),
         );
 
         Self {
             exit: false,
-            game_state,
+            selected_option: 0,
+            // game_state: Some(game_state),
+            game_state: None,
         }
     }
 
@@ -48,8 +51,8 @@ impl App {
         let mut last_size: u8 = 0; // 0 -> too small | 1 -> normal
 
         while !self.exit {
-            let min_width = 150;
-            let min_height = 30;
+            let min_width = 130;
+            let min_height = 28;
 
             let size = terminal.size()?;
             if size.width < min_width || size.height < min_height {
@@ -57,17 +60,34 @@ impl App {
                     sleep(Duration::from_millis(100));
                     last_size = 0;
                 }
+                self.handle_events()?;
                 terminal.draw(|frame| self.show_terminal_resize_warning(frame))?;
             } else {
                 if last_size == 0 {
                     sleep(Duration::from_millis(100));
                     let terminal_area = centered_rect(130, 28, size.width, size.height);
-                    self.game_state.set_area(terminal_area);
+
+                    // self.game_state.set_area(terminal_area);
+                    match self.game_state.as_mut() {
+                        Some(game) => game.set_area(terminal_area),
+                        None => {}
+                    }
+
                     last_size = 1;
                 }
-                self.handle_events()?;
-                self.game_state.update_game_state();
-                terminal.draw(|frame| self.draw(frame))?;
+
+                // self.game_state.game_loop(&mut self.exit)?;
+                // terminal.draw(|frame| self.game_state.draw(frame))?;
+                match self.game_state.as_mut() {
+                    Some(game) => {
+                        game.game_loop(&mut self.exit)?;
+                        terminal.draw(|frame| game.draw(frame))?
+                    }
+                    None => {
+                        self.handle_events()?;
+                        terminal.draw(|frame| self.draw(frame))?
+                    }
+                };
             }
         }
 
@@ -85,94 +105,135 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let area = frame.area();
+        let vertical_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![Constraint::Percentage(30), Constraint::Percentage(45)])
+            .flex(Flex::Start)
+            .split(frame.area());
 
-        let block_area = centered_rect(130, 28, area.width, area.height);
-        self.game_state.set_area(block_area);
+        let big_text = BigText::builder()
+            .pixel_size(PixelSize::Sextant)
+            .style(Style::new().blue())
+            .lines(vec![
+                "".into(),
+                "Terminal".red().into(),
+                "PONG".white().into(),
+                "~~~~~".into(),
+            ])
+            .alignment(Alignment::Center)
+            .build();
+        frame.render_widget(big_text, vertical_layout[0]);
 
-        let title = self.get_block_title("Pongerz ☘️");
-
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_type(BorderType::Thick)
-            .style(Style::default().fg(Color::Green))
-            .title_alignment(Alignment::Center);
-        frame.render_widget(block, block_area);
-
-        self.draw_game_elements(frame);
-
-        let controls_area = Rect::new(
-            block_area.x + 1,
-            block_area.y + block_area.height - 1,
-            block_area.width - 2,
-            1,
-        );
-        let controls_text = " Controls: ↑/↓ arrows / mouse wheel | Q - Quit ";
-        let controls = Paragraph::new(controls_text)
-            .style(Style::default().fg(Color::Yellow))
-            .alignment(Alignment::Center);
-        frame.render_widget(controls, controls_area);
-    }
-
-    fn draw_game_elements(&self, frame: &mut Frame) {
-        let game_state = &self.game_state;
-        let game_area = game_state.get_area();
-        let inner_area = Rect::new(
-            game_area.x + 1,
-            game_area.y + 1,
-            game_area.width - 1,
-            game_area.height - 1,
+        let options_block_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Percentage(30)])
+            .flex(Flex::Center)
+            .split(vertical_layout[1]);
+        frame.render_widget(
+            Block::default()
+                .title("")
+                .style(Style::default().fg(Color::Cyan))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Double),
+            options_block_layout[0],
         );
 
-        // Player 1 bar (left side)
-        let player1 = self.game_state.get_player(0);
-        let bar_1_area = Rect::new(
-            inner_area.x,
-            inner_area.y + player1.bar_position,
-            3,
-            player1.bar_length as u16,
-        );
-        let bar_1 = Block::default()
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Cyan).bg(Color::Blue));
-        frame.render_widget(bar_1, bar_1_area);
+        let options_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Percentage(60)])
+            .flex(Flex::Center)
+            .split(options_block_layout[0]);
 
-        // Player 2 bar (right side)
-        let player2 = self.game_state.get_player(1);
-        let bar_2_area = Rect::new(
-            inner_area.x + inner_area.width - 3,
-            inner_area.y + player2.bar_position,
-            3,
-            player2.bar_length as u16,
-        );
-        let bar_2 = Block::default()
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Cyan).bg(Color::Blue));
-        frame.render_widget(bar_2, bar_2_area);
+        let option_areas = Layout::vertical([Constraint::Max(1); 15])
+            .flex(Flex::Center)
+            .split(options_layout[0]);
 
-        // Ball
-        let ball = self.game_state.get_ball();
-        let ball_area = Rect::new(
-            inner_area.x + ball.position[0],
-            inner_area.y + ball.position[1],
-            2,
-            2,
-        );
-        // let ball = Paragraph::new("●").style(Style::default().fg(Color::Red));
-        // let ball = Paragraph::new("⬢").style(Style::default().fg(Color::Red));
-        let ball = Paragraph::new("██").style(Style::default().fg(Color::Red));
-        // let ball = Paragraph::new("⣿").style(Style::default().fg(Color::Red));
-        frame.render_widget(ball, ball_area);
+        let options = [
+            "Play vs. AI",
+            "Play with Fren",
+            "I like to watch",
+            "Settings",
+            "Exit",
+        ];
+
+        for (i, &option) in options.iter().enumerate() {
+            let mut option_widget = Paragraph::new(option)
+                .style(Style::default().fg(Color::Green).bold())
+                .alignment(Alignment::Center);
+
+            if i == self.selected_option {
+                option_widget =
+                    option_widget.style(Style::default().bg(Color::Blue).fg(Color::White).bold());
+            }
+
+            frame.render_widget(option_widget, option_areas[i * 3]);
+            // frame.render_widget(empty_line_widget.clone(), option_areas[(i * 3) + 1]);
+            // frame.render_widget(empty_line_widget.clone(), option_areas[(i * 3) + 2]);
+        }
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
         // Non-blocking event polling with short timeout
         if event::poll(Duration::from_millis(10))? {
             match event::read()? {
-                Event::Mouse(mouse_event) => self.handle_mouse_event(mouse_event),
                 Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                    self.handle_key_event(key_event)
+                    match key_event.code {
+                        KeyCode::Char('q') => self.exit(),
+                        KeyCode::Up => {
+                            if self.selected_option > 0 {
+                                self.selected_option -= 1;
+                            } else {
+                                self.selected_option = 4;
+                            }
+                        }
+                        KeyCode::Down => {
+                            if self.selected_option < 4 {
+                                self.selected_option += 1;
+                            } else {
+                                self.selected_option = 0;
+                            }
+                        }
+                        KeyCode::Enter => {
+                            match self.selected_option {
+                                0 => {
+                                    // Play vs. AI
+                                    // let game = Game::new(
+                                    //     ["Promethewz", "Computer"],
+                                    //     Rect::default(),
+                                    //     GameType::SinglePlayer,
+                                    //     Some(0.8),
+                                    // );
+                                    // self.game_state = Some(game);
+                                }
+                                1 => {
+                                    // Play with Friend
+                                    // let game = Game::new(
+                                    //     ["Player 1", "Player 2"],
+                                    //     Rect::default(),
+                                    //     GameType::Multiplayer,
+                                    //     None,
+                                    // );
+                                    // self.game_state = Some(game);
+                                }
+                                2 => {
+                                    // I like to watch
+                                    let game = Game::new(
+                                        ["Spectator", "Spectator"],
+                                        Rect::default(),
+                                        GameType::ScreenSaver,
+                                        None,
+                                    );
+                                    self.game_state = Some(game);
+                                }
+                                3 => {}
+                                4 => {
+                                    self.exit();
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             }
@@ -180,57 +241,8 @@ impl App {
         Ok(())
     }
 
-    fn handle_key_event(&mut self, key_event: KeyEvent) {
-        match key_event.code {
-            KeyCode::Char('q') => self.exit(),
-            KeyCode::Char('p') => self.game_state.toggle_pause(),
-            // player 1
-            KeyCode::Char('/') => self.game_state.power_move(0),
-            KeyCode::Up => self.game_state.move_player(0, 1),
-            KeyCode::Down => self.game_state.move_player(0, -1),
-            // player 2
-            KeyCode::Char(' ') => self.game_state.power_move(1),
-            KeyCode::Char('w') => self.game_state.move_player(1, 1),
-            KeyCode::Char('s') => self.game_state.move_player(1, -1),
-            _ => {}
-        }
-    }
-
-    fn handle_mouse_event(&mut self, mouse_event: MouseEvent) {
-        match mouse_event.kind {
-            MouseEventKind::ScrollUp => self.game_state.move_player(0, 1),
-            MouseEventKind::ScrollDown => self.game_state.move_player(0, -1),
-            _ => {}
-        }
-    }
-
     fn exit(&mut self) {
         self.exit = true;
-    }
-
-    fn get_block_title(&self, app_name: &'static str) -> String {
-        let player1 = self.game_state.get_player(0);
-        let mut player_text = player1.name.iter().collect::<String>();
-        player_text += &format!("({})", player1.score);
-
-        let player2 = self.game_state.get_player(1);
-        let mut computer_text = player2.name.iter().collect::<String>();
-        computer_text += &format!("({})", player2.score);
-
-        let padding_left: u16 = 32;
-        let padding_right: u16 = 32;
-
-        let total_padding = padding_left + padding_right + app_name.len() as u16;
-        let available_space = 130 - total_padding;
-
-        format!(
-            " {} {} {} {} {} ",
-            player_text.trim_end(),
-            "─".repeat((available_space / 2) as usize),
-            app_name.trim_end(),
-            "─".repeat((available_space / 2) as usize),
-            computer_text.trim_start(),
-        )
     }
 }
 
@@ -249,13 +261,20 @@ fn main() -> io::Result<()> {
 
     match &app_result {
         Ok(()) => {
-            println!("Thanks for playing Pongerz! 🏓");
-            println!(
-                "Final Score: {} - {}",
-                app.game_state.get_player(0).score,
-                app.game_state.get_player(1).score
-            );
-            println!("Game area height: {}", app.game_state.get_area().height);
+            println!("Thanks for playing terminal.pong! 🏓");
+            // println!(
+            //     "Final Score: {} - {}",
+            //     app.game_state.get_player(0).score,
+            //     app.game_state.get_player(1).score
+            // );
+            if let Some(game) = app.game_state.as_ref() {
+                // Display final scores
+                println!(
+                    "Final Score: {} - {}",
+                    game.get_player(0).score,
+                    game.get_player(1).score
+                );
+            }
         }
         Err(e) => {
             eprintln!("Game ended with error: {}", e);
