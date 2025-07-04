@@ -8,7 +8,7 @@ use std::{
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Style},
-    widgets::{canvas::Circle, Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 
@@ -31,9 +31,9 @@ struct ComputerAI {
     max_speed: f32,          // Maximum movement speed
     current_speed: f32,      // Current movement speed (with acceleration)
     target_position: f32,    // Where the AI wants to move
-    difficulty: f32,         // 0.0 to 1.0, affects all parameters
-    fatigue: f32,            // Increases over time, affects performance
-    last_update: Instant,    // For delta time calculations
+    // difficulty: f32,         // 0.0 to 1.0, affects all parameters
+    fatigue: f32,         // Increases over time, affects performance
+    last_update: Instant, // For delta time calculations
 }
 
 #[derive(Debug, Default)]
@@ -48,15 +48,12 @@ pub struct Player {
     pub bar_length: u8,
     pub bar_color: Color,
 
-    pub is_ready: bool,
-
     pub is_computer: bool,
     computer_ai: Option<ComputerAI>,
 }
 
 #[derive(Debug, Default)]
 pub struct Ball {
-    pub circle: Circle,
     pub position: [u16; 2],
     pub velocity: [i8; 2],
     pub is_powered: bool,
@@ -80,6 +77,8 @@ pub struct Game {
     last_update: Instant,
     is_paused: bool,
     scored_keep_display: bool,
+    difficulty: f32,
+    should_exit: bool,
 }
 
 impl Game {
@@ -98,7 +97,6 @@ impl Game {
             max_speed: 0.8 + final_difficulty * 0.7,                // 0.8-1.5 speed
             current_speed: 0.0,
             target_position: 0.0,
-            difficulty: final_difficulty,
             fatigue: 0.0,
             last_update: Instant::now(),
         };
@@ -114,7 +112,6 @@ impl Game {
             } else {
                 None
             },
-            is_ready: false,
             power_moves_left: STARTING_POWER_MOVES,
             last_power_used_at: None,
             score: 0,
@@ -131,7 +128,6 @@ impl Game {
             } else {
                 None
             },
-            is_ready: true,
             power_moves_left: STARTING_POWER_MOVES,
             last_power_used_at: None,
             score: 0,
@@ -141,12 +137,6 @@ impl Game {
             game_type,
             players: [player1, player2],
             ball: Ball {
-                circle: Circle {
-                    x: (game_area.width.saturating_sub(4) / 2) as f64,
-                    y: (game_area.height.saturating_sub(4) / 2) as f64,
-                    radius: 5.0,
-                    color: Color::LightRed,
-                },
                 position: [
                     game_area.width.saturating_sub(4) / 2,
                     game_area.height.saturating_sub(4) / 2,
@@ -160,6 +150,8 @@ impl Game {
             is_paused: false,
             // started_at: None,
             scored_keep_display: false,
+            difficulty: final_difficulty,
+            should_exit: false,
         }
     }
 
@@ -177,10 +169,6 @@ impl Game {
 
     pub fn get_ball(&self) -> &Ball {
         &self.ball
-    }
-
-    fn _ready_player(&mut self, index: usize) {
-        self.players[index].is_ready = true;
     }
 
     fn move_player(&mut self, player_index: usize, direction: i8) {
@@ -210,9 +198,10 @@ impl Game {
         }
     }
 
-    fn handle_key_event(&mut self, key_event: KeyEvent, app_exit: &mut bool) {
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
-            KeyCode::Char('q') => *app_exit = true,
+            KeyCode::Esc => self.should_exit = true,
+            KeyCode::Char('q') => self.should_exit = true,
             KeyCode::Char('p') => self.toggle_pause(),
             // player 1
             KeyCode::Char('/') => self.power_move(0),
@@ -234,12 +223,38 @@ impl Game {
         }
     }
 
-    fn handle_events(&mut self, app_exit: &mut bool) -> io::Result<()> {
-        if event::poll(Duration::from_millis(10))? {
+    fn handle_events(&mut self) -> io::Result<()> {
+        // Process all pending events for better responsiveness
+        while event::poll(Duration::from_millis(0))? {
             match event::read()? {
                 Event::Mouse(mouse_event) => self.handle_mouse_event(mouse_event),
                 Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                    self.handle_key_event(key_event, app_exit)
+                    self.handle_key_event(key_event)
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    // key events while paused (pause/options popup)
+    fn handle_pause_events(&mut self) -> io::Result<()> {
+        while event::poll(Duration::from_millis(0))? {
+            match event::read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    match key_event.code {
+                        KeyCode::Char('p') => self.is_paused = false, // Resume
+                        KeyCode::Enter => self.is_paused = false,     // Resume
+                        KeyCode::Esc => self.should_exit = true,
+                        KeyCode::Char('d') => {} // No-op, just for UI
+                        KeyCode::Left => {
+                            self.difficulty = (self.difficulty - 0.05).clamp(0.0, 1.0);
+                        }
+                        KeyCode::Right => {
+                            self.difficulty = (self.difficulty + 0.05).clamp(0.0, 1.0);
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             }
@@ -358,7 +373,11 @@ impl Game {
         let dt = ai.last_update.elapsed().as_secs_f32();
         ai.last_update = Instant::now();
         // increase fatigue over time
-        ai.fatigue = (ai.fatigue + dt * 0.009).min(0.3);
+        if self.game_type == GameType::ScreenSaver {
+            ai.fatigue = (ai.fatigue + dt * 0.001).min(0.05); // much less fatigue for AI vs AI
+        } else {
+            ai.fatigue = (ai.fatigue + dt * 0.009).min(0.3);
+        }
 
         // now, let's calculate the direction the ball is moving towards
         let ball_direction_x: i8 = ball.velocity[0].signum(); // one of these 3 -> { -1, 0, 1 }
@@ -404,18 +423,25 @@ impl Game {
             }
 
             // sprinkle some prediction errors -,-
-            let error_magnitude = ai.prediction_error * (1.0 + ai.fatigue);
+            let (error_magnitude, oops_chance, random_chance) = match self.game_type {
+                GameType::ScreenSaver => (ai.prediction_error * 0.3, 0.01, 0.02), // much less error
+                _ => (
+                    ai.prediction_error * (1.0 + ai.fatigue),
+                    0.05 + ai.fatigue * 0.1,
+                    0.1,
+                ),
+            };
             let prediction_error = (random::<f32>() - 0.5) * error_magnitude;
             pred_y += prediction_error;
 
-            // make big oopsies occasionally (5% chance)
-            if random::<f32>() < 0.05 + ai.fatigue * 0.1 {
-                pred_y += (random::<f32>() - 0.5) * 8.0;
+            // make big oopsies occasionally
+            if random::<f32>() < oops_chance {
+                pred_y += (random::<f32>() - 0.5) * 3.0;
             }
 
-            // add some final randomness (10% chance)
-            if random::<f32>() < 0.1 {
-                pred_y += (random::<f32>() - 0.5) * 2.0;
+            // add some final randomness
+            if random::<f32>() < random_chance {
+                pred_y += (random::<f32>() - 0.5) * 1.0;
             }
 
             // clamp to fix
@@ -435,24 +461,25 @@ impl Game {
         }
 
         // add some jitter and behavioral quirks
-        let jitter = (random::<f32>() - 0.5) * 0.1 * (1.0 + ai.fatigue);
-        let movement = distance_to_target.signum() * ai.current_speed
-            + if self.game_type == GameType::AgainstAi {
-                jitter
-            } else {
-                0.0
-            };
+        let jitter = match self.game_type {
+            GameType::ScreenSaver => (random::<f32>() - 0.5) * 0.02 * (1.0 + ai.fatigue), // much less jitter
+            GameType::AgainstAi => (random::<f32>() - 0.5) * 0.1 * (1.0 + ai.fatigue),
+            _ => 0.0,
+        };
+        let movement = distance_to_target.signum() * ai.current_speed + jitter;
 
-        let final_movement = if self.game_type == GameType::AgainstAi {
-            if random::<f32>() < 0.02 + ai.fatigue * 0.05 {
-                movement * 0.3 // hesitation (2% chance)
-            } else if random::<f32>() < 0.03 {
-                movement * 1.4 // overshoot (3% chance)
-            } else {
-                movement
+        let final_movement = match self.game_type {
+            GameType::ScreenSaver => movement, // no hesitation/overshoot in screensaver
+            GameType::AgainstAi => {
+                if random::<f32>() < 0.01 + ai.fatigue * 0.02 {
+                    movement * 0.3 // less hesitation
+                } else if random::<f32>() < 0.015 {
+                    movement * 1.2 // less overshoot
+                } else {
+                    movement
+                }
             }
-        } else {
-            movement
+            _ => movement,
         };
 
         // apply new position with clamping
@@ -473,15 +500,35 @@ impl Game {
 
         let ball = &mut self.ball;
 
-        if ball.velocity[0] < 0
-            && ball.position[1] >= player.bar_position
-            && ball.position[1] < player.bar_position + 5
-            && ball.position[0] > 3
-            && ball.position[0] < 6
-        {
-            ball.velocity[0] = 6;
+        let is_ball_approaching = if player_index == 0 {
+            ball.velocity[0] < 0
+        } else {
+            ball.velocity[0] > 0
+        };
+
+        let within_bar = ball.position[1] >= player.bar_position
+            && ball.position[1] < player.bar_position + player.bar_length as u16;
+
+        let min_range = 4.0;
+        let max_range = 12.0;
+        let allowed_range = (max_range - min_range) * (1.0 - self.difficulty) + min_range;
+        let allowed_range = allowed_range.round() as u16;
+
+        let within_x = if player_index == 0 {
+            ball.position[0] > 1 && ball.position[0] < 1 + allowed_range
+        } else {
+            let right_edge = self.game_area.width.saturating_sub(1);
+            ball.position[0] > right_edge.saturating_sub(allowed_range)
+                && ball.position[0] < right_edge.saturating_sub(1)
+        };
+
+        if is_ball_approaching && within_bar && within_x {
+            // power move: send ball flying in the correct direction
+            ball.velocity[0] = if player_index == 0 { 6 } else { -6 };
             ball.is_powered = true;
             player.power_moves_left -= 1;
+            player.bar_color = Color::Yellow; // Highlight bar on power move
+            player.last_power_used_at = Some(Instant::now());
         }
     }
 
@@ -502,9 +549,18 @@ impl Game {
             3,
             player1.bar_length as u16,
         );
+        let bar_1_color = if let Some(last) = player1.last_power_used_at {
+            if last.elapsed() < Duration::from_millis(200) {
+                Color::Yellow
+            } else {
+                Color::Cyan
+            }
+        } else {
+            Color::Cyan
+        };
         let bar_1 = Block::default()
             .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Cyan).bg(Color::Blue));
+            .style(Style::default().fg(Color::Cyan).bg(bar_1_color));
         frame.render_widget(bar_1, bar_1_area);
 
         // Player 2 bar (right side)
@@ -515,9 +571,18 @@ impl Game {
             3,
             player2.bar_length as u16,
         );
+        let bar_2_color = if let Some(last) = player2.last_power_used_at {
+            if last.elapsed() < Duration::from_millis(200) {
+                Color::Yellow
+            } else {
+                Color::Cyan
+            }
+        } else {
+            Color::Cyan
+        };
         let bar_2 = Block::default()
             .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Cyan).bg(Color::Blue));
+            .style(Style::default().fg(Color::Cyan).bg(bar_2_color));
         frame.render_widget(bar_2, bar_2_area);
 
         // Ball
@@ -528,18 +593,34 @@ impl Game {
             2,
             2,
         );
-        let ball = Paragraph::new("██").style(Style::default().fg(Color::Red));
+        let ball = Paragraph::new("██").style(Style::default().fg(ball.color));
         frame.render_widget(ball, ball_area);
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
+        use ratatui::layout::{Constraint, Direction, Flex, Layout};
         let area = frame.area();
 
-        let block_area = centered_rect(130, 28, area.width, area.height);
+        // Layout: [spacer] [game block] [spacer] [controls block] [spacer]
+        // Use more space for the top and bottom spacers to center the game block vertically
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![
+                Constraint::Percentage(25), // top spacer
+                Constraint::Length(28),     // game block
+                Constraint::Percentage(23), // middle spacer
+                Constraint::Length(4),      // controls block
+                Constraint::Percentage(25), // bottom spacer
+            ])
+            .flex(Flex::Center)
+            .split(area);
+
+        // Center the game block horizontally in its layout area
+        let game_area = layout[1];
+        let block_area = centered_rect(130, 28, game_area.width, game_area.height);
         self.set_area(block_area);
 
         let title = self.get_block_title("terminal.pong");
-
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
@@ -550,37 +631,95 @@ impl Game {
 
         self.draw_core_elements(frame);
 
-        let controls_area = Rect::new(
-            block_area.x + 1,
-            block_area.y + block_area.height - 1,
-            block_area.width - 2,
-            1,
-        );
-        let controls_text = " Controls: ↑/↓ arrows / mouse wheel | Q - Quit ";
-        let controls = Paragraph::new(controls_text)
-            .style(Style::default().fg(Color::Yellow))
-            .alignment(Alignment::Center);
-        frame.render_widget(controls, controls_area);
-    }
-
-    pub fn game_loop(&mut self, app_exit: &mut bool) -> io::Result<()> {
         if self.is_paused {
-            return Ok(());
+            // draw pause/options popup if paused
+            let popup_width = 48;
+            let popup_height = 10;
+            let popup_area = centered_rect(popup_width, popup_height, area.width, area.height);
+            let popup_block = Block::default()
+                .title("Paused - Options")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Double)
+                .style(Style::default().fg(Color::Magenta))
+                .title_alignment(Alignment::Center);
+            frame.render_widget(popup_block, popup_area);
+
+            // options and instructions
+            let diff_label = match self.difficulty {
+                d if d < 0.33 => "Easy",
+                d if d < 0.66 => "Normal",
+                _ => "Hard",
+            };
+            let options_text = format!(
+                "\n  Difficulty: {} ({:.2})\n  [←/→] Adjust  [P] Resume  [Esc] Quit\n",
+                diff_label, self.difficulty
+            );
+            let options = Paragraph::new(options_text)
+                .style(Style::default().fg(Color::White))
+                .alignment(Alignment::Center);
+            let options_area = Rect::new(
+                popup_area.x + 2,
+                popup_area.y + 2,
+                popup_area.width - 4,
+                popup_area.height - 4,
+            );
+            frame.render_widget(options, options_area);
         }
 
-        let fps = 30;
-        let each_frame = 1000 / fps;
+        // Controls helper block (outside game block, centered vertically in the lower area)
+        let controls_block_width = block_area.width.saturating_sub(8).min(110);
+        let controls_block_x = block_area.x + (block_area.width - controls_block_width) / 2;
+        let controls_block_y = layout[3].y + (layout[3].height - 3) / 2;
+        let controls_block_area =
+            Rect::new(controls_block_x, controls_block_y, controls_block_width, 3);
+        let controls_text = " Player 1: ↑/↓ or mouse wheel, '/'=Power    |    Player 2: W/S, Space=Power    |    P=Pause    |    Esc=Quit ";
+        let controls = Paragraph::new(controls_text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .style(Style::default().fg(Color::Yellow)),
+            )
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center);
+        frame.render_widget(controls, controls_block_area);
+    }
+
+    pub fn game_loop(&mut self) -> io::Result<bool> {
+        // If paused, only handle pause menu events
+        if self.is_paused {
+            self.handle_pause_events()?;
+            return Ok(true);
+        }
+
+        // FPS/speed is relative to difficulty
+        let min_fps = 15.0;
+        let max_fps = 40.0;
+        let fps = min_fps + (max_fps - min_fps) * self.difficulty;
+        let each_frame = (1000.0 / fps).round() as u64;
 
         if self.last_update.elapsed() >= Duration::from_millis(each_frame) {
-            self.handle_events(app_exit)?;
-            self.update_computer_player(0);
-            self.update_computer_player(1);
+            self.handle_events()?;
+            if self.should_exit {
+                return Ok(false);
+            }
+            if self.game_type == GameType::AgainstAi {
+                self.update_computer_player(1);
+            } else {
+                if rand::random() {
+                    self.update_computer_player(0);
+                    self.update_computer_player(1);
+                } else {
+                    self.update_computer_player(1);
+                    self.update_computer_player(0);
+                }
+            }
             let _ = self.update_ball_position();
 
             self.last_update = Instant::now();
         }
 
-        Ok(())
+        Ok(true)
     }
 
     fn get_block_title(&self, app_name: &'static str) -> String {

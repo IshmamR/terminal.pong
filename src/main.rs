@@ -24,26 +24,54 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct App {
+struct MainMenu {
+    options: Vec<&'static str>,
+    selected: usize,
+}
+
+#[derive(Debug)]
+enum AppScreen {
+    MainMenu,
+    PlayerNameInput { current: usize, max: usize },
+    Game,
+}
+
+struct App {
     exit: bool,
-    selected_option: usize,
-    game_state: Option<Game>,
+    main_menu: MainMenu,
+    current_game: Option<Game>,
+    screen: AppScreen,
+    name_input: String,
+    player_names: [String; 2],
 }
 
 impl App {
-    pub fn new() -> Self {
-        let _game_state = Game::new(
-            ["Promethewz", "Computer"],
-            Rect::default(),
-            GameType::ScreenSaver,
-            Some(0.8),
-        );
+    fn new() -> Self {
+        // let current__game = Game::new(
+        //     ["Player 1", "Player 2"],
+        //     Rect::default(),
+        //     GameType::ScreenSaver,
+        //     Some(0.8),
+        // );
+
+        let main_menu = MainMenu {
+            options: vec![
+                "Play vs. AI",
+                "Play with Friend",
+                "I like to watch",
+                "Settings",
+                "Exit",
+            ],
+            selected: 0,
+        };
 
         Self {
             exit: false,
-            selected_option: 0,
-            // game_state: Some(game_state),
-            game_state: None,
+            main_menu: main_menu,
+            current_game: None,
+            screen: AppScreen::MainMenu,
+            name_input: String::new(),
+            player_names: [String::new(), String::new()],
         }
     }
 
@@ -66,28 +94,39 @@ impl App {
                 if last_size == 0 {
                     sleep(Duration::from_millis(100));
                     let terminal_area = centered_rect(130, 28, size.width, size.height);
-
-                    // self.game_state.set_area(terminal_area);
-                    match self.game_state.as_mut() {
+                    match self.current_game.as_mut() {
                         Some(game) => game.set_area(terminal_area),
                         None => {}
                     }
-
                     last_size = 1;
                 }
 
-                // self.game_state.game_loop(&mut self.exit)?;
-                // terminal.draw(|frame| self.game_state.draw(frame))?;
-                match self.game_state.as_mut() {
-                    Some(game) => {
-                        game.game_loop(&mut self.exit)?;
-                        terminal.draw(|frame| game.draw(frame))?
-                    }
-                    None => {
+                match self.screen {
+                    AppScreen::MainMenu => {
                         self.handle_events()?;
-                        terminal.draw(|frame| self.draw(frame))?
+                        let _ = terminal.draw(|frame| self.draw(frame));
                     }
-                };
+                    AppScreen::PlayerNameInput { current, max } => {
+                        self.handle_player_name_input_events(current, max)?;
+                        let _ = terminal.draw(|frame| self.draw_player_name_input(frame, current));
+                    }
+                    AppScreen::Game => {
+                        match self.current_game.as_mut() {
+                            Some(game) => {
+                                let continue_game = game.game_loop()?;
+                                if !continue_game {
+                                    self.current_game = None;
+                                    self.screen = AppScreen::MainMenu;
+                                } else {
+                                    let _ = terminal.draw(|frame| game.draw(frame));
+                                }
+                            }
+                            None => {
+                                self.screen = AppScreen::MainMenu;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -116,9 +155,9 @@ impl App {
             .style(Style::new().blue())
             .lines(vec![
                 "".into(),
-                "Terminal".red().into(),
+                "terminal".cyan().into(),
                 "PONG".white().into(),
-                "~~~~~".into(),
+                "~~~~~".light_green().into(),
             ])
             .alignment(Alignment::Center)
             .build();
@@ -148,28 +187,35 @@ impl App {
             .flex(Flex::Center)
             .split(options_layout[0]);
 
-        let options = [
-            "Play vs. AI",
-            "Play with Fren",
-            "I like to watch",
-            "Settings",
-            "Exit",
-        ];
-
-        for (i, &option) in options.iter().enumerate() {
+        for (i, &option) in self.main_menu.options.iter().enumerate() {
             let mut option_widget = Paragraph::new(option)
                 .style(Style::default().fg(Color::Green).bold())
                 .alignment(Alignment::Center);
 
-            if i == self.selected_option {
+            if i == self.main_menu.selected {
                 option_widget =
                     option_widget.style(Style::default().bg(Color::Blue).fg(Color::White).bold());
             }
 
             frame.render_widget(option_widget, option_areas[i * 3]);
-            // frame.render_widget(empty_line_widget.clone(), option_areas[(i * 3) + 1]);
-            // frame.render_widget(empty_line_widget.clone(), option_areas[(i * 3) + 2]);
         }
+    }
+
+    fn draw_player_name_input(&mut self, frame: &mut Frame, current: usize) {
+        let area = frame.area();
+        let popup_area = centered_rect_with_percentage(60, 20, area.width, area.height);
+        let label = if current == 0 {
+            "Enter Player 1 name (max 16 chars):"
+        } else {
+            "Enter Player 2 name (max 16 chars):"
+        };
+        let name = &self.name_input;
+        let input = format!("{}\n> {}", label, name);
+        let popup = Paragraph::new(input)
+            .block(Block::default().title("Player Names").borders(Borders::ALL))
+            .style(Style::default().fg(Color::Green))
+            .alignment(Alignment::Center);
+        frame.render_widget(popup, popup_area);
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -180,56 +226,108 @@ impl App {
                     match key_event.code {
                         KeyCode::Char('q') => self.exit(),
                         KeyCode::Up => {
-                            if self.selected_option > 0 {
-                                self.selected_option -= 1;
+                            if self.main_menu.selected > 0 {
+                                self.main_menu.selected -= 1;
                             } else {
-                                self.selected_option = 4;
+                                self.main_menu.selected = 4;
                             }
                         }
                         KeyCode::Down => {
-                            if self.selected_option < 4 {
-                                self.selected_option += 1;
+                            if self.main_menu.selected < 4 {
+                                self.main_menu.selected += 1;
                             } else {
-                                self.selected_option = 0;
+                                self.main_menu.selected = 0;
                             }
                         }
                         KeyCode::Enter => {
-                            match self.selected_option {
+                            match self.main_menu.selected {
                                 0 => {
                                     // Play vs. AI
-                                    // let game = Game::new(
-                                    //     ["Promethewz", "Computer"],
-                                    //     Rect::default(),
-                                    //     GameType::SinglePlayer,
-                                    //     Some(0.8),
-                                    // );
-                                    // self.game_state = Some(game);
+                                    self.name_input.clear();
+                                    self.player_names = [String::new(), String::new()];
+                                    self.screen = AppScreen::PlayerNameInput { current: 0, max: 0 };
                                 }
                                 1 => {
                                     // Play with Friend
-                                    // let game = Game::new(
-                                    //     ["Player 1", "Player 2"],
-                                    //     Rect::default(),
-                                    //     GameType::Multiplayer,
-                                    //     None,
-                                    // );
-                                    // self.game_state = Some(game);
+                                    self.name_input.clear();
+                                    self.player_names = [String::new(), String::new()];
+                                    self.screen = AppScreen::PlayerNameInput { current: 0, max: 1 };
                                 }
                                 2 => {
                                     // I like to watch
                                     let game = Game::new(
-                                        ["Spectator", "Spectator"],
+                                        ["Forg", "Car"],
                                         Rect::default(),
                                         GameType::ScreenSaver,
-                                        None,
+                                        1.2.into(),
                                     );
-                                    self.game_state = Some(game);
+                                    self.current_game = Some(game);
+                                    self.screen = AppScreen::Game;
                                 }
                                 3 => {}
                                 4 => {
                                     self.exit();
                                 }
                                 _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_player_name_input_events(&mut self, current: usize, max: usize) -> io::Result<()> {
+        if event::poll(Duration::from_millis(10))? {
+            match event::read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    match key_event.code {
+                        KeyCode::Enter => {
+                            let default_names = ["Player 1", "Player 2"];
+                            let name = if self.name_input.trim().is_empty() {
+                                default_names[current]
+                            } else {
+                                self.name_input.trim()
+                            };
+                            self.player_names[current] = name.to_string();
+                            self.name_input.clear();
+                            if current < max {
+                                self.screen = AppScreen::PlayerNameInput { current: current + 1, max };
+                            } else {
+                                if max == 0 {
+                                    // vs AI
+                                    let game = Game::new(
+                                        [self.player_names[0].as_str(), "Computer"],
+                                        Rect::default(),
+                                        GameType::AgainstAi,
+                                        Some(0.8),
+                                    );
+                                    self.current_game = Some(game);
+                                } else {
+                                    // with friend
+                                    let game = Game::new(
+                                        [self.player_names[0].as_str(), self.player_names[1].as_str()],
+                                        Rect::default(),
+                                        GameType::WithFriend,
+                                        None,
+                                    );
+                                    self.current_game = Some(game);
+                                }
+                                self.screen = AppScreen::Game;
+                            }
+                        }
+                        KeyCode::Esc => {
+                            self.screen = AppScreen::MainMenu;
+                        }
+                        KeyCode::Backspace => {
+                            self.name_input.pop();
+                        }
+                        KeyCode::Char(c) => {
+                            if self.name_input.len() < 16 && c.is_ascii_graphic() {
+                                self.name_input.push(c);
                             }
                         }
                         _ => {}
@@ -264,10 +362,10 @@ fn main() -> io::Result<()> {
             println!("Thanks for playing terminal.pong! 🏓");
             // println!(
             //     "Final Score: {} - {}",
-            //     app.game_state.get_player(0).score,
-            //     app.game_state.get_player(1).score
+            //     app.current_game.get_player(0).score,
+            //     app.current_game.get_player(1).score
             // );
-            if let Some(game) = app.game_state.as_ref() {
+            if let Some(game) = app.current_game.as_ref() {
                 // Display final scores
                 println!(
                     "Final Score: {} - {}",
