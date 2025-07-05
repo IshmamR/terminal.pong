@@ -89,7 +89,7 @@ impl Game {
         game_type: GameType,
         difficulty: Option<f32>,
     ) -> Self {
-        let theme = GameTheme::Light;
+        let theme = GameTheme::Dark;
 
         let final_difficulty = difficulty.unwrap_or(DEFAULT_DIFFICULTY).clamp(0.0, 2.0);
         let ai_player = ComputerAI {
