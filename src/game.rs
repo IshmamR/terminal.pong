@@ -6,7 +6,7 @@ use std::{
 };
 
 use ratatui::{
-    layout::{Alignment, Rect},
+    layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style},
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
@@ -14,7 +14,7 @@ use ratatui::{
 
 use crate::helpers::{centered_rect, string_to_char_array};
 
-pub const PLAYER_NAME_SIZE: usize = 16;
+pub const PLAYER_NAME_CHAR_LEN: usize = 16;
 const DEFAULT_BAR_LENGTH: u8 = 5;
 const DEFAULT_BALL_VELOCITY_X: i8 = 3;
 const DEFAULT_BALL_VELOCITY_Y: i8 = 1;
@@ -38,7 +38,7 @@ struct ComputerAI {
 
 #[derive(Debug, Default)]
 pub struct Player {
-    pub name: [char; PLAYER_NAME_SIZE],
+    pub name: [char; PLAYER_NAME_CHAR_LEN],
     pub score: u32,
 
     pub power_moves_left: u8,
@@ -225,7 +225,7 @@ impl Game {
 
     fn handle_events(&mut self) -> io::Result<()> {
         // Process all pending events for better responsiveness
-        while event::poll(Duration::from_millis(0))? {
+        while event::poll(Duration::from_millis(5))? {
             match event::read()? {
                 Event::Mouse(mouse_event) => self.handle_mouse_event(mouse_event),
                 Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
@@ -239,7 +239,7 @@ impl Game {
 
     // key events while paused (pause/options popup)
     fn handle_pause_events(&mut self) -> io::Result<()> {
-        while event::poll(Duration::from_millis(0))? {
+        while event::poll(Duration::from_millis(5))? {
             match event::read()? {
                 Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                     match key_event.code {
@@ -273,7 +273,7 @@ impl Game {
      */
     fn update_ball_position(&mut self) -> Option<u8> {
         let inner_width = self.game_area.width.saturating_sub(3);
-        let inner_height = self.game_area.height.saturating_sub(1);
+        let inner_height = self.game_area.height.saturating_sub(2);
 
         let players = &self.players;
         let ball = &mut self.ball;
@@ -598,27 +598,29 @@ impl Game {
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
-        use ratatui::layout::{Constraint, Direction, Flex, Layout};
         let area = frame.area();
 
-        // Layout: [spacer] [game block] [spacer] [controls block] [spacer]
+        let main_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Length(130)])
+            .flex(Flex::Center)
+            .split(area);
+
+        // Layout: [spacer] [[game block] [spacer] [controls block]] [spacer]
         // Use more space for the top and bottom spacers to center the game block vertically
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![
-                Constraint::Percentage(25), // top spacer
-                Constraint::Length(28),     // game block
-                Constraint::Percentage(23), // middle spacer
-                Constraint::Length(4),      // controls block
-                Constraint::Percentage(25), // bottom spacer
+                Constraint::Length(28), // game block
+                Constraint::Length(3),  // controls block
             ])
             .flex(Flex::Center)
-            .split(area);
+            .split(main_layout[0]);
 
         // Center the game block horizontally in its layout area
-        let game_area = layout[1];
-        let block_area = centered_rect(130, 28, game_area.width, game_area.height);
-        self.set_area(block_area);
+        let game_area = layout[0];
+        // let block_area = centered_rect(130, 28, game_area.width, game_area.height);
+        self.set_area(game_area);
 
         let title = self.get_block_title("terminal.pong");
         let block = Block::default()
@@ -627,9 +629,21 @@ impl Game {
             .border_type(BorderType::Thick)
             .style(Style::default().fg(Color::Green))
             .title_alignment(Alignment::Center);
-        frame.render_widget(block, block_area);
+        frame.render_widget(block, game_area);
 
         self.draw_core_elements(frame);
+
+        let controls_text = " Player 1: ↑/↓ or mouse wheel, '/'=Power    |    Player 2: W/S, Space=Power    |    P=Pause    |    Esc=Quit ";
+        let controls = Paragraph::new(controls_text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .style(Style::default().fg(Color::Yellow)),
+            )
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center);
+        frame.render_widget(controls, layout[1]);
 
         if self.is_paused {
             // draw pause/options popup if paused
@@ -665,30 +679,15 @@ impl Game {
             );
             frame.render_widget(options, options_area);
         }
-
-        // Controls helper block (outside game block, centered vertically in the lower area)
-        let controls_block_width = block_area.width.saturating_sub(8).min(110);
-        let controls_block_x = block_area.x + (block_area.width - controls_block_width) / 2;
-        let controls_block_y = layout[3].y + (layout[3].height - 3) / 2;
-        let controls_block_area =
-            Rect::new(controls_block_x, controls_block_y, controls_block_width, 3);
-        let controls_text = " Player 1: ↑/↓ or mouse wheel, '/'=Power    |    Player 2: W/S, Space=Power    |    P=Pause    |    Esc=Quit ";
-        let controls = Paragraph::new(controls_text)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .style(Style::default().fg(Color::Yellow)),
-            )
-            .style(Style::default().fg(Color::Yellow))
-            .alignment(Alignment::Center);
-        frame.render_widget(controls, controls_block_area);
     }
 
     pub fn game_loop(&mut self) -> io::Result<bool> {
         // If paused, only handle pause menu events
         if self.is_paused {
             self.handle_pause_events()?;
+            if self.should_exit {
+                return Ok(false);
+            }
             return Ok(true);
         }
 

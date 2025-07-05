@@ -9,7 +9,7 @@ use crossterm::{
     ExecutableCommand,
 };
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Flex, Layout, Margin, Rect},
     style::{Color, Style, Stylize},
     widgets::{Block, BorderType, Borders, Paragraph},
     DefaultTerminal, Frame,
@@ -19,7 +19,7 @@ use tui_big_text::{BigText, PixelSize};
 mod game;
 mod helpers;
 use crate::{
-    game::{Game, GameType},
+    game::{Game, GameType, PLAYER_NAME_CHAR_LEN},
     helpers::{centered_rect, centered_rect_with_percentage},
 };
 
@@ -45,23 +45,18 @@ struct App {
     player_names: [String; 2],
 }
 
+const MAIN_MENU_OPTIONS: [&str; 5] = [
+    "Play vs. AI",
+    "Play with Friend",
+    "I like to watch",
+    "Settings",
+    "Exit",
+];
+
 impl App {
     fn new() -> Self {
-        // let current__game = Game::new(
-        //     ["Player 1", "Player 2"],
-        //     Rect::default(),
-        //     GameType::ScreenSaver,
-        //     Some(0.8),
-        // );
-
         let main_menu = MainMenu {
-            options: vec![
-                "Play vs. AI",
-                "Play with Friend",
-                "I like to watch",
-                "Settings",
-                "Exit",
-            ],
+            options: MAIN_MENU_OPTIONS.to_vec(),
             selected: 0,
         };
 
@@ -93,9 +88,9 @@ impl App {
             } else {
                 if last_size == 0 {
                     sleep(Duration::from_millis(100));
-                    let terminal_area = centered_rect(130, 28, size.width, size.height);
+                    let game_area = centered_rect(130, 28, size.width, size.height);
                     match self.current_game.as_mut() {
-                        Some(game) => game.set_area(terminal_area),
+                        Some(game) => game.set_area(game_area),
                         None => {}
                     }
                     last_size = 1;
@@ -110,22 +105,20 @@ impl App {
                         self.handle_player_name_input_events(current, max)?;
                         let _ = terminal.draw(|frame| self.draw_player_name_input(frame, current));
                     }
-                    AppScreen::Game => {
-                        match self.current_game.as_mut() {
-                            Some(game) => {
-                                let continue_game = game.game_loop()?;
-                                if !continue_game {
-                                    self.current_game = None;
-                                    self.screen = AppScreen::MainMenu;
-                                } else {
-                                    let _ = terminal.draw(|frame| game.draw(frame));
-                                }
-                            }
-                            None => {
+                    AppScreen::Game => match self.current_game.as_mut() {
+                        Some(game) => {
+                            let continue_game = game.game_loop()?;
+                            if !continue_game {
+                                self.current_game = None;
                                 self.screen = AppScreen::MainMenu;
+                            } else {
+                                let _ = terminal.draw(|frame| game.draw(frame));
                             }
                         }
-                    }
+                        None => {
+                            self.screen = AppScreen::MainMenu;
+                        }
+                    },
                 }
             }
         }
@@ -146,8 +139,12 @@ impl App {
     fn draw(&mut self, frame: &mut Frame) {
         let vertical_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Percentage(30), Constraint::Percentage(45)])
-            .flex(Flex::Start)
+            .constraints(vec![
+                Constraint::Length(12),
+                Constraint::Length(13),
+                Constraint::Max(5),
+            ])
+            .flex(Flex::Center)
             .split(frame.area());
 
         let big_text = BigText::builder()
@@ -179,26 +176,41 @@ impl App {
 
         let options_layout = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints(vec![Constraint::Percentage(60)])
+            .constraints(vec![Constraint::Percentage(90)])
             .flex(Flex::Center)
             .split(options_block_layout[0]);
 
-        let option_areas = Layout::vertical([Constraint::Max(1); 15])
-            .flex(Flex::Center)
-            .split(options_layout[0]);
+        let inner_options_layout = options_layout[0].inner(Margin::new(1, 0));
+        let rows_stored = inner_options_layout.height.clamp(5, 15) as usize;
 
+        let option_constraints = vec![Constraint::Max(1); rows_stored];
+        let option_areas = Layout::vertical(option_constraints)
+            .flex(Flex::Center)
+            .split(inner_options_layout);
+
+        let empty_line = Paragraph::new("")
+            .style(Style::default())
+            .alignment(Alignment::Center);
+
+        frame.render_widget(empty_line.clone(), option_areas[0]);
         for (i, &option) in self.main_menu.options.iter().enumerate() {
             let mut option_widget = Paragraph::new(option)
                 .style(Style::default().fg(Color::Green).bold())
                 .alignment(Alignment::Center);
 
             if i == self.main_menu.selected {
-                option_widget =
-                    option_widget.style(Style::default().bg(Color::Blue).fg(Color::White).bold());
+                option_widget = option_widget.style(
+                    Style::default()
+                        .bg(Color::Reset)
+                        .fg(Color::White)
+                        .bold()
+                        .italic(),
+                );
             }
 
-            frame.render_widget(option_widget, option_areas[i * 3]);
+            frame.render_widget(option_widget, option_areas[(i + 1) * 2]);
         }
+        frame.render_widget(empty_line, option_areas[0]);
     }
 
     fn draw_player_name_input(&mut self, frame: &mut Frame, current: usize) {
@@ -212,7 +224,12 @@ impl App {
         let name = &self.name_input;
         let input = format!("{}\n> {}", label, name);
         let popup = Paragraph::new(input)
-            .block(Block::default().title("Player Names").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title("Player Names")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Thick),
+            )
             .style(Style::default().fg(Color::Green))
             .alignment(Alignment::Center);
         frame.render_widget(popup, popup_area);
@@ -295,7 +312,10 @@ impl App {
                             self.player_names[current] = name.to_string();
                             self.name_input.clear();
                             if current < max {
-                                self.screen = AppScreen::PlayerNameInput { current: current + 1, max };
+                                self.screen = AppScreen::PlayerNameInput {
+                                    current: current + 1,
+                                    max,
+                                };
                             } else {
                                 if max == 0 {
                                     // vs AI
@@ -309,7 +329,10 @@ impl App {
                                 } else {
                                     // with friend
                                     let game = Game::new(
-                                        [self.player_names[0].as_str(), self.player_names[1].as_str()],
+                                        [
+                                            self.player_names[0].as_str(),
+                                            self.player_names[1].as_str(),
+                                        ],
                                         Rect::default(),
                                         GameType::WithFriend,
                                         None,
@@ -326,7 +349,8 @@ impl App {
                             self.name_input.pop();
                         }
                         KeyCode::Char(c) => {
-                            if self.name_input.len() < 16 && c.is_ascii_graphic() {
+                            if self.name_input.len() < PLAYER_NAME_CHAR_LEN && c.is_ascii_graphic()
+                            {
                                 self.name_input.push(c);
                             }
                         }
