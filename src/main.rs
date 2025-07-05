@@ -17,6 +17,7 @@ use ratatui::{
 use tui_big_text::{BigText, PixelSize};
 
 mod game;
+mod game_theme;
 mod helpers;
 use crate::{
     game::{Game, GameType, PLAYER_NAME_CHAR_LEN},

@@ -7,12 +7,15 @@ use std::{
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
-    style::{Color, Style},
+    style::Style,
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 
-use crate::helpers::{centered_rect, string_to_char_array};
+use crate::{
+    game_theme::GameTheme,
+    helpers::{centered_rect, string_to_char_array},
+};
 
 pub const PLAYER_NAME_CHAR_LEN: usize = 16;
 const DEFAULT_BAR_LENGTH: u8 = 5;
@@ -46,18 +49,16 @@ pub struct Player {
 
     pub bar_position: u16,
     pub bar_length: u8,
-    pub bar_color: Color,
 
     pub is_computer: bool,
     computer_ai: Option<ComputerAI>,
 }
 
 #[derive(Debug, Default)]
-pub struct Ball {
-    pub position: [u16; 2],
-    pub velocity: [i8; 2],
-    pub is_powered: bool,
-    pub color: Color,
+struct Ball {
+    position: [u16; 2],
+    velocity: [i8; 2],
+    is_powered: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -73,12 +74,12 @@ pub struct Game {
     players: [Player; 2],
     ball: Ball,
     game_area: Rect,
-    // started_at: Option<Instant>,
     last_update: Instant,
     is_paused: bool,
     scored_keep_display: bool,
     difficulty: f32,
     should_exit: bool,
+    theme: GameTheme,
 }
 
 impl Game {
@@ -88,13 +89,15 @@ impl Game {
         game_type: GameType,
         difficulty: Option<f32>,
     ) -> Self {
-        let final_difficulty = difficulty.unwrap_or(DEFAULT_DIFFICULTY).clamp(0.0, 1.0);
+        let theme = GameTheme::Light;
+
+        let final_difficulty = difficulty.unwrap_or(DEFAULT_DIFFICULTY).clamp(0.0, 2.0);
         let ai_player = ComputerAI {
-            reaction_delay: 0.2 + (1.0 - final_difficulty) * 0.5, // 0.2-0.7 seconds
+            reaction_delay: 0.2 + (2.0 - final_difficulty) * 0.5, // 0.2-0.7 seconds
             last_ball_direction: 0,
             reaction_timer: 0.0,
-            prediction_error: 2.0 + (1.0 - final_difficulty) * 3.0, // 2-5 units error
-            max_speed: 0.8 + final_difficulty * 0.7,                // 0.8-1.5 speed
+            prediction_error: 2.0 + (1.0 - final_difficulty) * 2.5, // 2-7 units error
+            max_speed: 0.8 + final_difficulty * 0.85,               // 0.8-2.5 speed
             current_speed: 0.0,
             target_position: 0.0,
             fatigue: 0.0,
@@ -104,7 +107,6 @@ impl Game {
         let player1 = Player {
             name: string_to_char_array(player_names[0]),
             bar_position: (game_area.height / 2).saturating_sub((DEFAULT_BAR_LENGTH / 2) as u16),
-            bar_color: Color::Cyan,
             bar_length: DEFAULT_BAR_LENGTH,
             is_computer: false,
             computer_ai: if game_type == GameType::ScreenSaver {
@@ -120,7 +122,6 @@ impl Game {
         let player2 = Player {
             name: string_to_char_array(player_names[1]),
             bar_position: (game_area.height / 2).saturating_sub((DEFAULT_BAR_LENGTH / 2) as u16),
-            bar_color: Color::Cyan,
             bar_length: DEFAULT_BAR_LENGTH,
             is_computer: false,
             computer_ai: if game_type == GameType::AgainstAi || game_type == GameType::ScreenSaver {
@@ -143,15 +144,14 @@ impl Game {
                 ],
                 velocity: [DEFAULT_BALL_VELOCITY_X, DEFAULT_BALL_VELOCITY_Y],
                 is_powered: false,
-                color: Color::LightRed,
             },
             last_update: Instant::now(),
             game_area: game_area,
             is_paused: false,
-            // started_at: None,
             scored_keep_display: false,
             difficulty: final_difficulty,
             should_exit: false,
+            theme,
         }
     }
 
@@ -165,10 +165,6 @@ impl Game {
 
     pub fn get_player(&self, index: usize) -> &Player {
         &self.players[index]
-    }
-
-    pub fn get_ball(&self) -> &Ball {
-        &self.ball
     }
 
     fn move_player(&mut self, player_index: usize, direction: i8) {
@@ -246,12 +242,18 @@ impl Game {
                         KeyCode::Char('p') => self.is_paused = false, // Resume
                         KeyCode::Enter => self.is_paused = false,     // Resume
                         KeyCode::Esc => self.should_exit = true,
-                        KeyCode::Char('d') => {} // No-op, just for UI
+                        KeyCode::Char('d') => {
+                            // Toggle theme (Dark/Light)
+                            self.theme = match self.theme {
+                                GameTheme::Dark => GameTheme::Light,
+                                GameTheme::Light => GameTheme::Dark,
+                            };
+                        }
                         KeyCode::Left => {
-                            self.difficulty = (self.difficulty - 0.05).clamp(0.0, 1.0);
+                            self.difficulty = (self.difficulty - 0.1).clamp(0.0, 2.0);
                         }
                         KeyCode::Right => {
-                            self.difficulty = (self.difficulty + 0.05).clamp(0.0, 1.0);
+                            self.difficulty = (self.difficulty + 0.1).clamp(0.0, 2.0);
                         }
                         _ => {}
                     }
@@ -527,12 +529,12 @@ impl Game {
             ball.velocity[0] = if player_index == 0 { 6 } else { -6 };
             ball.is_powered = true;
             player.power_moves_left -= 1;
-            player.bar_color = Color::Yellow; // Highlight bar on power move
             player.last_power_used_at = Some(Instant::now());
         }
     }
 
     fn draw_core_elements(&self, frame: &mut Frame) {
+        let colors = self.theme.colors();
         let game_area = self.get_area();
         let inner_area = Rect::new(
             game_area.x + 1,
@@ -551,16 +553,16 @@ impl Game {
         );
         let bar_1_color = if let Some(last) = player1.last_power_used_at {
             if last.elapsed() < Duration::from_millis(200) {
-                Color::Yellow
+                colors.player_bar_power
             } else {
-                Color::Cyan
+                colors.player_bar
             }
         } else {
-            Color::Cyan
+            colors.player_bar
         };
         let bar_1 = Block::default()
             .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Cyan).bg(bar_1_color));
+            .style(Style::default().fg(colors.player_bar).bg(bar_1_color));
         frame.render_widget(bar_1, bar_1_area);
 
         // Player 2 bar (right side)
@@ -573,32 +575,32 @@ impl Game {
         );
         let bar_2_color = if let Some(last) = player2.last_power_used_at {
             if last.elapsed() < Duration::from_millis(200) {
-                Color::Yellow
+                colors.player_bar_power
             } else {
-                Color::Cyan
+                colors.player_bar
             }
         } else {
-            Color::Cyan
+            colors.player_bar
         };
         let bar_2 = Block::default()
             .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Cyan).bg(bar_2_color));
+            .style(Style::default().fg(colors.player_bar).bg(bar_2_color));
         frame.render_widget(bar_2, bar_2_area);
 
         // Ball
-        let ball = self.get_ball();
         let ball_area = Rect::new(
-            inner_area.x + ball.position[0],
-            inner_area.y + ball.position[1],
+            inner_area.x + self.ball.position[0],
+            inner_area.y + self.ball.position[1],
             2,
             2,
         );
-        let ball = Paragraph::new("██").style(Style::default().fg(ball.color));
+        let ball = Paragraph::new("██").style(Style::default().fg(colors.ball));
         frame.render_widget(ball, ball_area);
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
+        let colors = self.theme.colors();
 
         let main_layout = Layout::default()
             .direction(Direction::Horizontal)
@@ -606,8 +608,6 @@ impl Game {
             .flex(Flex::Center)
             .split(area);
 
-        // Layout: [spacer] [[game block] [spacer] [controls block]] [spacer]
-        // Use more space for the top and bottom spacers to center the game block vertically
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![
@@ -617,9 +617,7 @@ impl Game {
             .flex(Flex::Center)
             .split(main_layout[0]);
 
-        // Center the game block horizontally in its layout area
         let game_area = layout[0];
-        // let block_area = centered_rect(130, 28, game_area.width, game_area.height);
         self.set_area(game_area);
 
         let title = self.get_block_title("terminal.pong");
@@ -627,7 +625,7 @@ impl Game {
             .title(title)
             .borders(Borders::ALL)
             .border_type(BorderType::Thick)
-            .style(Style::default().fg(Color::Green))
+            .style(Style::default().fg(colors.border).bg(colors.background))
             .title_alignment(Alignment::Center);
         frame.render_widget(block, game_area);
 
@@ -639,37 +637,41 @@ impl Game {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .style(Style::default().fg(Color::Yellow)),
+                    .style(Style::default().fg(colors.border)),
             )
-            .style(Style::default().fg(Color::Yellow))
+            .style(Style::default().fg(colors.text))
             .alignment(Alignment::Center);
         frame.render_widget(controls, layout[1]);
 
         if self.is_paused {
             // draw pause/options popup if paused
-            let popup_width = 48;
-            let popup_height = 10;
+            let popup_width = 52;
+            let popup_height = 12;
             let popup_area = centered_rect(popup_width, popup_height, area.width, area.height);
             let popup_block = Block::default()
                 .title("Paused - Options")
                 .borders(Borders::ALL)
                 .border_type(BorderType::Double)
-                .style(Style::default().fg(Color::Magenta))
+                .style(Style::default().fg(colors.accent))
                 .title_alignment(Alignment::Center);
             frame.render_widget(popup_block, popup_area);
 
             // options and instructions
             let diff_label = match self.difficulty {
-                d if d < 0.33 => "Easy",
-                d if d < 0.66 => "Normal",
+                d if d < 0.6 => "Easy",
+                d if d < 1.3 => "Normal",
                 _ => "Hard",
             };
+            let theme_label = match self.theme {
+                GameTheme::Dark => "Dark",
+                GameTheme::Light => "Light",
+            };
             let options_text = format!(
-                "\n  Difficulty: {} ({:.2})\n  [←/→] Adjust  [P] Resume  [Esc] Quit\n",
-                diff_label, self.difficulty
+                "\n  Difficulty: {} ({:.2})\n [←/→] Adjust  [D] Toggle Theme (Current: {})\n  [P/Enter] Resume  [Esc] Quit\n",
+                diff_label, self.difficulty, theme_label
             );
             let options = Paragraph::new(options_text)
-                .style(Style::default().fg(Color::White))
+                .style(Style::default().fg(colors.text))
                 .alignment(Alignment::Center);
             let options_area = Rect::new(
                 popup_area.x + 2,
