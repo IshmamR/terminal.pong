@@ -83,13 +83,19 @@ pub struct Game {
 }
 
 impl Game {
+    pub fn set_theme(&mut self, theme: GameTheme) {
+        self.theme = theme;
+    }
+}
+
+impl Game {
     pub fn new(
         player_names: [&str; 2],
         game_area: Rect,
         game_type: GameType,
         difficulty: Option<f32>,
     ) -> Self {
-        let theme = GameTheme::Dark;
+        let theme = GameTheme::Monokai;
 
         let final_difficulty = difficulty.unwrap_or(DEFAULT_DIFFICULTY).clamp(0.0, 2.0);
         let ai_player = ComputerAI {
@@ -243,10 +249,15 @@ impl Game {
                         KeyCode::Enter => self.is_paused = false,     // Resume
                         KeyCode::Esc => self.should_exit = true,
                         KeyCode::Char('d') => {
-                            // Toggle theme (Dark/Light)
+                            // Cycle through all available themes
                             self.theme = match self.theme {
-                                GameTheme::Dark => GameTheme::Light,
-                                GameTheme::Light => GameTheme::Dark,
+                                GameTheme::Monokai => GameTheme::Solarized,
+                                GameTheme::Solarized => GameTheme::Dracula,
+                                GameTheme::Dracula => GameTheme::GruvboxDark,
+                                GameTheme::GruvboxDark => GameTheme::Nord,
+                                GameTheme::Nord => GameTheme::OneDark,
+                                GameTheme::OneDark => GameTheme::HighContrast,
+                                GameTheme::HighContrast => GameTheme::Monokai,
                             };
                         }
                         KeyCode::Left => {
@@ -663,8 +674,13 @@ impl Game {
                 _ => "Hard",
             };
             let theme_label = match self.theme {
-                GameTheme::Dark => "Dark",
-                GameTheme::Light => "Light",
+                GameTheme::Monokai => "Monokai",
+                GameTheme::Solarized => "Solarized",
+                GameTheme::Dracula => "Dracula",
+                GameTheme::GruvboxDark => "Gruvbox Dark",
+                GameTheme::Nord => "Nord",
+                GameTheme::OneDark => "One Dark",
+                GameTheme::HighContrast => "High Contrast",
             };
             let options_text = format!(
                 "\n  Difficulty: {} ({:.2})\n [←/→] Adjust  [D] Toggle Theme (Current: {})\n  [P/Enter] Resume  [Esc] Quit\n",

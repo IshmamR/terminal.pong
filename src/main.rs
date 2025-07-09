@@ -35,7 +35,10 @@ enum AppScreen {
     MainMenu,
     PlayerNameInput { current: usize, max: usize },
     Game,
+    Settings,
 }
+
+use crate::game_theme::GameTheme;
 
 struct App {
     exit: bool,
@@ -44,6 +47,12 @@ struct App {
     screen: AppScreen,
     name_input: String,
     player_names: [String; 2],
+    // Settings
+    default_difficulty_vs_ai: f32,
+    default_difficulty_with_friend: f32,
+    default_difficulty_screensaver: f32,
+    selected_theme: GameTheme,
+    settings_selected: usize, // 0: vs AI, 1: with friend, 2: screensaver, 3: theme, 4: back
 }
 
 const MAIN_MENU_OPTIONS: [&str; 5] = [
@@ -68,6 +77,11 @@ impl App {
             screen: AppScreen::MainMenu,
             name_input: String::new(),
             player_names: [String::new(), String::new()],
+            default_difficulty_vs_ai: 0.8,
+            default_difficulty_with_friend: 1.0,
+            default_difficulty_screensaver: 1.2,
+            selected_theme: GameTheme::Monokai,
+            settings_selected: 0,
         }
     }
 
@@ -120,6 +134,10 @@ impl App {
                             self.screen = AppScreen::MainMenu;
                         }
                     },
+                    AppScreen::Settings => {
+                        self.handle_settings_events()?;
+                        let _ = terminal.draw(|frame| self.draw_settings(frame));
+                    }
                 }
             }
         }
@@ -273,16 +291,21 @@ impl App {
                                 }
                                 2 => {
                                     // I like to watch
-                                    let game = Game::new(
+                                    let mut game = Game::new(
                                         ["Forg", "Car"],
                                         Rect::default(),
                                         GameType::ScreenSaver,
-                                        1.2.into(),
+                                        Some(self.default_difficulty_screensaver),
                                     );
+                                    game.set_theme(self.selected_theme);
                                     self.current_game = Some(game);
                                     self.screen = AppScreen::Game;
                                 }
-                                3 => {}
+                                3 => {
+                                    // Settings
+                                    self.settings_selected = 0;
+                                    self.screen = AppScreen::Settings;
+                                }
                                 4 => {
                                     self.exit();
                                 }
@@ -320,24 +343,26 @@ impl App {
                             } else {
                                 if max == 0 {
                                     // vs AI
-                                    let game = Game::new(
+                                    let mut game = Game::new(
                                         [self.player_names[0].as_str(), "Computer"],
                                         Rect::default(),
                                         GameType::AgainstAi,
-                                        Some(0.8),
+                                        Some(self.default_difficulty_vs_ai),
                                     );
+                                    game.set_theme(self.selected_theme);
                                     self.current_game = Some(game);
                                 } else {
                                     // with friend
-                                    let game = Game::new(
+                                    let mut game = Game::new(
                                         [
                                             self.player_names[0].as_str(),
                                             self.player_names[1].as_str(),
                                         ],
                                         Rect::default(),
                                         GameType::WithFriend,
-                                        None,
+                                        Some(self.default_difficulty_with_friend),
                                     );
+                                    game.set_theme(self.selected_theme);
                                     self.current_game = Some(game);
                                 }
                                 self.screen = AppScreen::Game;
@@ -354,6 +379,159 @@ impl App {
                             {
                                 self.name_input.push(c);
                             }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    // --- Settings Screen ---
+    fn draw_settings(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        let theme_names = [
+            "Monokai",
+            "Solarized",
+            "Dracula",
+            "Gruvbox Dark",
+            "Nord",
+            "One Dark",
+            "High Contrast",
+        ];
+        let theme_idx = self.selected_theme as usize;
+        let settings = [
+            format!(
+                "Default Difficulty (vs AI): {:.2}",
+                self.default_difficulty_vs_ai
+            ),
+            format!(
+                "Default Difficulty (with Friend): {:.2}",
+                self.default_difficulty_with_friend
+            ),
+            format!(
+                "Default Difficulty (Screensaver): {:.2}",
+                self.default_difficulty_screensaver
+            ),
+            format!("Theme: {}", theme_names[theme_idx]),
+            "Back".to_string(),
+        ];
+        let mut text = String::from("Settings\n\n");
+        for (i, s) in settings.iter().enumerate() {
+            if i == self.settings_selected {
+                text.push_str(&format!("> {} <\n", s));
+            } else {
+                text.push_str(&format!("  {}  \n", s));
+            }
+        }
+
+        let [settings_area] = Layout::horizontal([Constraint::Percentage(50)])
+            .flex(Flex::Center)
+            .areas(area);
+
+        let [settings_area] = Layout::vertical([Constraint::Length(12)])
+            .flex(Flex::Center)
+            .areas(settings_area);
+
+        let settings_screen = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .title("Settings")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Thick),
+            )
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center);
+        frame.render_widget(settings_screen, settings_area);
+    }
+
+    fn handle_settings_events(&mut self) -> io::Result<()> {
+        use crate::game_theme::GameTheme;
+        if event::poll(Duration::from_millis(10))? {
+            match event::read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    match key_event.code {
+                        KeyCode::Up => {
+                            if self.settings_selected > 0 {
+                                self.settings_selected -= 1;
+                            } else {
+                                self.settings_selected = 4;
+                            }
+                        }
+                        KeyCode::Down => {
+                            if self.settings_selected < 4 {
+                                self.settings_selected += 1;
+                            } else {
+                                self.settings_selected = 0;
+                            }
+                        }
+                        KeyCode::Left => match self.settings_selected {
+                            0 => {
+                                self.default_difficulty_vs_ai =
+                                    (self.default_difficulty_vs_ai - 0.1).clamp(0.0, 2.0)
+                            }
+                            1 => {
+                                self.default_difficulty_with_friend =
+                                    (self.default_difficulty_with_friend - 0.1).clamp(0.0, 2.0)
+                            }
+                            2 => {
+                                self.default_difficulty_screensaver =
+                                    (self.default_difficulty_screensaver - 0.1).clamp(0.0, 2.0)
+                            }
+                            3 => {
+                                let idx = self.selected_theme as usize;
+                                let new_idx = if idx == 0 { 6 } else { idx - 1 };
+                                self.selected_theme = match new_idx {
+                                    0 => GameTheme::Monokai,
+                                    1 => GameTheme::Solarized,
+                                    2 => GameTheme::Dracula,
+                                    3 => GameTheme::GruvboxDark,
+                                    4 => GameTheme::Nord,
+                                    5 => GameTheme::OneDark,
+                                    6 => GameTheme::HighContrast,
+                                    _ => GameTheme::Monokai,
+                                };
+                            }
+                            _ => {}
+                        },
+                        KeyCode::Right => match self.settings_selected {
+                            0 => {
+                                self.default_difficulty_vs_ai =
+                                    (self.default_difficulty_vs_ai + 0.1).clamp(0.0, 2.0)
+                            }
+                            1 => {
+                                self.default_difficulty_with_friend =
+                                    (self.default_difficulty_with_friend + 0.1).clamp(0.0, 2.0)
+                            }
+                            2 => {
+                                self.default_difficulty_screensaver =
+                                    (self.default_difficulty_screensaver + 0.1).clamp(0.0, 2.0)
+                            }
+                            3 => {
+                                let idx = self.selected_theme as usize;
+                                let new_idx = if idx == 6 { 0 } else { idx + 1 };
+                                self.selected_theme = match new_idx {
+                                    0 => GameTheme::Monokai,
+                                    1 => GameTheme::Solarized,
+                                    2 => GameTheme::Dracula,
+                                    3 => GameTheme::GruvboxDark,
+                                    4 => GameTheme::Nord,
+                                    5 => GameTheme::OneDark,
+                                    6 => GameTheme::HighContrast,
+                                    _ => GameTheme::Monokai,
+                                };
+                            }
+                            _ => {}
+                        },
+                        KeyCode::Enter => {
+                            if self.settings_selected == 4 {
+                                self.screen = AppScreen::MainMenu;
+                            }
+                        }
+                        KeyCode::Esc => {
+                            self.screen = AppScreen::MainMenu;
                         }
                         _ => {}
                     }
