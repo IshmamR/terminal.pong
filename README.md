@@ -2,24 +2,36 @@
 
 A simple, fun ping pong game playable entirely in your terminal. Built with Rust and powered by [`ratatui`](https://crates.io/crates/ratatui) for a beautifully responsive TUI (Text User Interface).
 
-Currently, you can play against a basic AI opponent. It's fast, minimal, and runs right inside your terminal window.
+
+Currently, you can play against a basic AI opponent, a friend locally, or just watch AI vs AI in screensaver mode. It's fast, minimal, and runs right inside your terminal window.
+
+Now with a customizable settings screen: choose your favorite color theme and set default difficulty for each mode!
+
 
 ## 🎥 Demo
 <div>
-<img src="https://vhs.charm.sh/vhs-6mvBhYmwwrMUSYQOCBSQlB.gif" alt="Made with VHS" width="1200" height="600" />
-
-<a href="https://vhs.charm.sh">
-  <img src="https://stuff.charm.sh/vhs/badge.svg" />
-</a>
+<img src="https://vhs.charm.sh/vhs-6mvBhYmwwrMUSYQOCBSQlB.gif" alt="Gameplay Demo" width="800" height="400" />
 </div>
+
+<!-- <details> -->
+<!-- <summary>🖼️ <b>Settings & Theme Preview</b> (click to expand)</summary> -->
+
+<!-- <img src="https://vhs.charm.sh/vhs-6mvBhYmwwrMUSYQOCBSQlB.gif#settings" alt="Settings Screen" width="800" height="200" /> -->
+
+<!-- </details> -->
 
 ---
 
+
 ## ✨ Features
 
-- 🖥️ Single-player mode vs. computer
-- 🎮 Real-time terminal-based gameplay
-- 🎨 Smooth and colorful UI using `ratatui`
+- 🖥️ Single-player mode vs. computer (AI)
+- 👥 Local multiplayer (play with a friend on the same keyboard)
+- 🤖 Screensaver mode (AI vs AI, endless pong)
+- � Multiple color themes — pick your favorite in the settings
+- 🛠️ In-app settings: adjust default difficulty for each mode
+- �🎮 Real-time terminal-based gameplay
+- � Smooth and colorful UI using `ratatui`
 - 🚀 Written in Rust <del>for performance and reliability</del> because I wanted to
 
 ---
@@ -33,21 +45,25 @@ Currently, you can play against a basic AI opponent. It's fast, minimal, and run
 
 ### Installation
 
+git clone [https://github.com/yourusername/terminal-pingpong.git](https://github.com/IshmamR/terminal.pong)
+
 Clone the repository and build:
 
 ```bash
-git clone [https://github.com/yourusername/terminal-pingpong.git](https://github.com/IshmamR/terminal.pong)
+git clone https://github.com/IshmamR/terminal.pong.git
 cd terminal.pong
 cargo run --release
 ```
 
+
 Then play directly in your terminal!
+
 
 ### 🎯 Controls
 
-- Up Arrow/ Mouse scroll up: Move paddle up
-- Down Arrow/ Mouse scroll down: Move paddle down
-- Space: Power move ( this is for pro players ;) )
+- Up Arrow / Mouse scroll up: Move paddle up
+- Down Arrow / Mouse scroll down: Move paddle down
+- Space: Power move (for pro players 😉)
 - Q: Quit
 
 ### 🛠 Tech Stack
@@ -56,11 +72,18 @@ Then play directly in your terminal!
 - UI: ratatui
 - Rendering: Crossterm-based backend
 
-🚧 Roadmap / Planned Features
 
-- [ ] 🎮 Multiplayer support — play with a friend over the network or local terminal
-- [ ] 🧠 Computer difficulty levels — beginner, intermediate, expert
-- [ ] 🌈 Screen saver mode — AI vs AI with endless pong as a terminal screensaver
+---
+
+## 🚧 Roadmap / Planned Features
+
+- [x] 🎮 Local multiplayer support (same terminal)
+- [x] 🧠 Computer difficulty levels (adjustable in settings)
+- [x] 🌈 Screensaver mode — AI vs AI with endless pong
+- [x] 🎨 Theme selection and live preview in settings
+- [ ] 💾 Save settings to SQLite database (persistent preferences)
+- [ ] 🌐 Network multiplayer (play with a friend remotely)
+- [ ] 🏆 High scores / stats
 
 ## 📜 License
 
@@ -68,6 +91,7 @@ Then play directly in your terminal!
 
 ---
 
-<div style="text-align:center">
+
+<div align="center">
 Made with ❤️ and Rust.
 </div>

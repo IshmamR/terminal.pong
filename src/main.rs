@@ -146,11 +146,17 @@ impl App {
     }
 
     fn show_terminal_resize_warning(&mut self, frame: &mut Frame) {
+        let colors = self.selected_theme.colors();
         let area = frame.area();
         let popup_area = centered_rect_with_percentage(60, 20, area.width, area.height);
         let popup = Paragraph::new("Terminal too small!\nPlease resize.")
-            .block(Block::default().title("Warning").borders(Borders::ALL))
-            .style(Style::default().fg(Color::Red))
+            .block(
+                Block::default()
+                    .title("Warning")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Thick),
+            )
+            .style(Style::default().fg(colors.ball))
             .alignment(Alignment::Center);
         frame.render_widget(popup, popup_area);
     }
@@ -391,6 +397,7 @@ impl App {
 
     // --- Settings Screen ---
     fn draw_settings(&mut self, frame: &mut Frame) {
+        let colors = self.selected_theme.colors();
         let area = frame.area();
         let theme_names = [
             "Monokai",
@@ -418,33 +425,105 @@ impl App {
             format!("Theme: {}", theme_names[theme_idx]),
             "Back".to_string(),
         ];
-        let mut text = String::from("Settings\n\n");
+
+        let mut styled_lines = Vec::new();
         for (i, s) in settings.iter().enumerate() {
             if i == self.settings_selected {
-                text.push_str(&format!("> {} <\n", s));
+                styled_lines.push(
+                    Paragraph::new(format!("> {} <", s))
+                        .style(Style::default().fg(Color::White).bold())
+                        .alignment(Alignment::Center),
+                );
             } else {
-                text.push_str(&format!("  {}  \n", s));
+                styled_lines.push(
+                    Paragraph::new(format!("  {}  ", s))
+                        .style(Style::default().fg(colors.text))
+                        .alignment(Alignment::Center),
+                );
             }
         }
 
         let [settings_area] = Layout::horizontal([Constraint::Percentage(50)])
             .flex(Flex::Center)
             .areas(area);
+        let [settings_block_area, preview_area] =
+            Layout::vertical([Constraint::Length(12), Constraint::Length(3)])
+                .flex(Flex::Center)
+                .areas(settings_area);
+        let settings_block = Block::default()
+            .title("Settings")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Thick)
+            .style(Style::default().fg(colors.accent));
+        frame.render_widget(settings_block, settings_block_area);
 
-        let [settings_area] = Layout::vertical([Constraint::Length(12)])
-            .flex(Flex::Center)
-            .areas(settings_area);
+        let line_height = 2;
+        let total_height = styled_lines.len() * line_height;
+        let start_y = settings_block_area.y
+            + (settings_block_area
+                .height
+                .saturating_sub(total_height as u16)
+                / 2);
+        for (i, para) in styled_lines.into_iter().enumerate() {
+            let y = start_y + (i as u16) * line_height as u16;
+            let line_area = Rect {
+                x: settings_block_area.x + 2,
+                y,
+                width: settings_block_area.width.saturating_sub(4),
+                height: 1,
+            };
+            frame.render_widget(para, line_area);
+        }
 
-        let settings_screen = Paragraph::new(text)
-            .block(
-                Block::default()
-                    .title("Settings")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Thick),
-            )
-            .style(Style::default().fg(Color::Yellow))
+        let preview_colors = [
+            ("Player Bar", colors.player_bar),
+            ("Power Bar", colors.player_bar_power),
+            ("Ball", colors.ball),
+            ("Text", colors.text),
+            ("Accent", colors.accent),
+            ("Border", colors.border),
+            ("Background", colors.background),
+        ];
+        let color_bar_width = preview_area.width.saturating_sub(4);
+        let color_block_width = if preview_colors.len() > 0 {
+            color_bar_width / preview_colors.len() as u16
+        } else {
+            1
+        };
+        for (i, (_, color)) in preview_colors.iter().enumerate() {
+            let x = preview_area.x + 2 + (i as u16) * color_block_width;
+            let width = if i == preview_colors.len() - 1 {
+                color_bar_width - (color_block_width * (preview_colors.len() as u16 - 1))
+            } else {
+                color_block_width
+            };
+            let color_rect = Rect {
+                x,
+                y: preview_area.y + 1,
+                width: width.max(1),
+                height: 1,
+            };
+            let color_block = Paragraph::new("")
+                .style(Style::default().bg(*color))
+                .alignment(Alignment::Center);
+            frame.render_widget(color_block, color_rect);
+        }
+
+        let label_area = Rect {
+            x: preview_area.x + 2,
+            y: preview_area.y + 2,
+            width: color_bar_width,
+            height: 1,
+        };
+        let label_text = preview_colors
+            .iter()
+            .map(|(label, _)| format!("{:^width$}", label, width = color_block_width as usize))
+            .collect::<Vec<_>>()
+            .join("");
+        let label_para = Paragraph::new(label_text)
+            .style(Style::default().fg(colors.text))
             .alignment(Alignment::Center);
-        frame.render_widget(settings_screen, settings_area);
+        frame.render_widget(label_para, label_area);
     }
 
     fn handle_settings_events(&mut self) -> io::Result<()> {

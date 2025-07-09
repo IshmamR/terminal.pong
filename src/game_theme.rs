@@ -1,6 +1,5 @@
 use ratatui::style::Color;
 
-/// Available game themes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameTheme {
     Monokai,
