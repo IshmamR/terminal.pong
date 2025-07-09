@@ -1,6 +1,5 @@
 Output demo.gif
 
-Set Theme "Aardvark Blue"
 Set Width 2400
 Set Height 1200
 
@@ -9,20 +8,21 @@ Type "cargo run" Enter
 Sleep 2500ms
 Show
 
-Down 18
-Sleep 2500ms
-Up 5
-Sleep 1500ms
-Up 6
-Sleep 1500ms
-Down 12
-Sleep 1500ms
-Up 10
-Sleep 1500ms
-Down 5
+# Start AI vs AI (Down 2, Enter)
 Sleep 1000ms
-Down 10
-Sleep 5000ms
+Down
+Sleep 1000ms
+Down
+Sleep 1000ms
+Enter
+Sleep 1500ms
 
+# Let the game play
+Sleep 6000ms
+
+# Quit to menu
 Type "Q"
+Sleep 2000ms
+
+# End
 Hide

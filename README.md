@@ -2,26 +2,24 @@
 
 A simple, fun ping pong game playable entirely in your terminal. Built with Rust and powered by [`ratatui`](https://crates.io/crates/ratatui) for a beautifully responsive TUI (Text User Interface).
 
-
 Currently, you can play against a basic AI opponent, a friend locally, or just watch AI vs AI in screensaver mode. It's fast, minimal, and runs right inside your terminal window.
 
 Now with a customizable settings screen: choose your favorite color theme and set default difficulty for each mode!
 
-
 ## 🎥 Demo
+
 <div>
-<img src="https://vhs.charm.sh/vhs-6mvBhYmwwrMUSYQOCBSQlB.gif" alt="Gameplay Demo" width="800" height="400" />
+<img src="https://vhs.charm.sh/vhs-6QXgcKWH4C5DJxhDBuVsSq.gif" alt="Gameplay Demo" width="800" height="400" />
 </div>
 
-<!-- <details> -->
-<!-- <summary>🖼️ <b>Settings & Theme Preview</b> (click to expand)</summary> -->
+<details>
+<summary>🖼️ <b>Settings & Theme Preview</b> (click to expand)</summary>
 
-<!-- <img src="https://vhs.charm.sh/vhs-6mvBhYmwwrMUSYQOCBSQlB.gif#settings" alt="Settings Screen" width="800" height="200" /> -->
+<img src="https://vhs.charm.sh/vhs-4vwyzEIwT7Z7c1pG0XD8LW.gif" alt="Settings Screen" width="800" height="400" />
 
-<!-- </details> -->
+</details>
 
 ---
-
 
 ## ✨ Features
 
@@ -55,9 +53,7 @@ cd terminal.pong
 cargo run --release
 ```
 
-
 Then play directly in your terminal!
-
 
 ### 🎯 Controls
 
@@ -71,7 +67,6 @@ Then play directly in your terminal!
 - Language: Rust
 - UI: ratatui
 - Rendering: Crossterm-based backend
-
 
 ---
 
@@ -90,7 +85,6 @@ Then play directly in your terminal!
 [MIT](LICENSE).
 
 ---
-
 
 <div align="center">
 Made with ❤️ and Rust.
